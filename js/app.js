@@ -268,10 +268,9 @@ function showApp() {
 function buildNav() {
   const nav = $("#tabs");
   nav.innerHTML = "";
-  const tabs = ME.role === "owner"
-    ? ["dashboard", "properties", "tasks", "hiring", "messages", "settings"]
-    : ["dashboard", "properties", "crews", "messages", "profile"];
-  const labels = { dashboard: "Dashboard", properties: "Properties", tasks: "Tasks", hiring: "Hiring", messages: "Messages", settings: "Settings", crews: "Crews", profile: "Profile" };
+  // Universal tab structure for both roles
+  const tabs = ["dashboard", "properties", "tasks", "people", "map", "profile", "settings"];
+  const labels = { dashboard: "Dashboard", properties: "Properties", tasks: "Tasks", people: "People", map: "Map", profile: "Profile", settings: "Settings" };
   tabs.forEach(v => {
     const b = el("button", "navbtn", labels[v]);
     b.dataset.view = v;
@@ -282,8 +281,8 @@ function buildNav() {
   // Bottom nav
   const bn = $("#bottomNav");
   bn.innerHTML = "";
-  const icons = { dashboard: "📊", properties: "🏠", tasks: "📋", hiring: "🤝", messages: "💬", settings: "⚙️", crews: "👷", profile: "👤" };
-  const blabels = { dashboard: "Home", properties: "Properties", tasks: "Tasks", hiring: "Hiring", messages: "Messages", settings: "Settings", crews: "Crews", profile: "Profile" };
+  const icons = { dashboard: "📊", properties: "🏠", tasks: "📋", people: "👷", map: "🗺️", profile: "👤", settings: "⚙️" };
+  const blabels = { dashboard: "Home", properties: "Properties", tasks: "Tasks", people: "People", map: "Map", profile: "Profile", settings: "Settings" };
   tabs.forEach(v => {
     const b = el("button", "bottom-nav-btn");
     b.dataset.view = v;
@@ -307,6 +306,8 @@ function render() {
   if (view === "dashboard") renderDashboard();
   else if (view === "properties") renderProperties();
   else if (view === "tasks") renderTasks();
+  else if (view === "people") renderPeople();
+  else if (view === "map") renderMap();
   else if (view === "hiring") renderHiring();
   else if (view === "messages") renderMessages();
   else if (view === "crews") renderCrews();
@@ -528,6 +529,124 @@ function renderTasks() {
   wrap.appendChild(list);
 }
 
+// ==================== PEOPLE (Both roles) ====================
+function renderPeople() {
+  const wrap = $("#view-people");
+  wrap.innerHTML = "";
+
+  wrap.appendChild(el("h2", null, "People"));
+
+  // Show users of the opposite role
+  const users = ME.role === "owner" ? Store.workers() : Store.db.users.filter(u => u.role === "owner" && u.active).map(u => Store.publicUser(u));
+
+  if (!users.length) {
+    wrap.appendChild(emptyState("No users found", ME.role === "owner" ? "No workers registered yet" : "No owners registered yet"));
+    return;
+  }
+
+  const list = el("div", "grid");
+  users.forEach(u => {
+    const card = el("div", "card");
+    const av = el("span", "avatar", initial(u.name));
+    av.style.background = avatarColor(u.id);
+    av.style.width = "40px";
+    av.style.height = "40px";
+    av.style.fontSize = "16px";
+    card.appendChild(av);
+    card.appendChild(el("h3", null, u.name));
+    card.appendChild(el("p", "muted sm", u.role === "worker" ? "Trade Worker" : "Property Owner"));
+
+    // Show profile info for workers
+    if (u.role === "worker") {
+      const profile = Store.getWorkerProfile(u.id);
+      if (profile) {
+        const bits = [];
+        if (profile.trade) bits.push(profile.trade);
+        if (profile.location) bits.push(profile.location);
+        if (profile.rating) bits.push(`⭐ ${profile.rating}`);
+        if (bits.length) card.appendChild(el("p", "muted sm", bits.join(" · ")));
+        if (profile.bio) card.appendChild(el("p", "muted", profile.bio.slice(0, 100) + (profile.bio.length > 100 ? "…" : "")));
+        if (profile.skills && profile.skills.length) {
+          card.appendChild(el("p", "muted sm", `Skills: ${profile.skills.join(", ")}`));
+        }
+      }
+    }
+
+    // Show owner info
+    if (u.role === "owner") {
+      const props = Store.propertiesFor(u);
+      card.appendChild(el("p", "muted sm", `${props.length} propert${props.length === 1 ? "y" : "ies"}`));
+    }
+
+    const acts = el("div", "card-actions");
+    const msgBtn = el("button", "btn sm ghost", "💬 Message");
+    msgBtn.onclick = () => openConversationModal(u.id);
+    acts.appendChild(msgBtn);
+
+    if (ME.role === "owner" && u.role === "worker") {
+      const hireBtn = el("button", "btn sm", "Hire");
+      hireBtn.onclick = () => openHireModal(u);
+      acts.appendChild(hireBtn);
+    }
+    if (ME.role === "worker" && u.role === "owner") {
+      const reqBtn = el("button", "btn sm", "Request Work");
+      reqBtn.onclick = () => openRequestWorkModal(u);
+      acts.appendChild(reqBtn);
+    }
+
+    card.appendChild(acts);
+    list.appendChild(card);
+  });
+  wrap.appendChild(list);
+}
+
+// ==================== MAP (Both roles) ====================
+function renderMap() {
+  const wrap = $("#view-map");
+  wrap.innerHTML = "";
+
+  wrap.appendChild(el("h2", null, "Map"));
+
+  const mapDiv = el("div", "map");
+  mapDiv.id = "mainMap";
+  mapDiv.style.height = "400px";
+  wrap.appendChild(mapDiv);
+
+  // Initialize Leaflet map
+  if (typeof L !== "undefined") {
+    if (map) { map.remove(); map = null; }
+    map = L.map("mainMap").setView([34.0522, -118.2437], 10);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "© OpenStreetMap contributors"
+    }).addTo(map);
+
+    // Add markers for properties
+    const props = Store.propertiesFor(ME);
+    props.forEach(p => {
+      if (p.lat != null && p.lng != null) {
+        L.marker([p.lat, p.lng]).addTo(map)
+          .bindPopup(`<b>${esc(p.name)}</b><br>${esc(p.address || "")}`);
+      }
+    });
+
+    // Add markers for tasks
+    const tasks = Store.tasksForUser(ME);
+    tasks.forEach(t => {
+      if (t.lat != null && t.lng != null) {
+        const color = t.priority === "high" ? "red" : t.priority === "normal" ? "orange" : "green";
+        L.circleMarker([t.lat, t.lng], {
+          radius: 8,
+          fillColor: color,
+          color: color,
+          fillOpacity: 0.7
+        }).addTo(map).bindPopup(`<b>${esc(t.title)}</b><br>${esc(t.description || "")}`);
+      }
+    });
+  } else {
+    wrap.appendChild(el("p", "muted", "Map library not loaded. Please check your internet connection."));
+  }
+}
+
 // ==================== HIRING (Owner) ====================
 function renderHiring() {
   const wrap = $("#view-hiring");
@@ -660,48 +779,38 @@ function renderCrews() {
   wrap.appendChild(list);
 }
 
-// ==================== PROFILE (Worker) ====================
+// ==================== PROFILE (Both roles) ====================
 function renderProfile() {
   const wrap = $("#view-profile");
   wrap.innerHTML = "";
 
   wrap.appendChild(el("h2", null, "My Profile"));
 
-  const profile = Store.getWorkerProfile(ME.id) || {};
-
   const card = el("div", "card");
-  card.appendChild(el("h3", null, "Worker Profile"));
+  card.appendChild(el("h3", null, ME.role === "worker" ? "Worker Profile" : "Owner Profile"));
 
+  // Common fields for both roles
   const bioInput = el("textarea");
-  bioInput.value = profile.bio || "";
+  bioInput.value = (Store.getWorkerProfile(ME.id) || {}).bio || "";
   bioInput.rows = 3;
-  bioInput.placeholder = "Tell owners about yourself...";
+  bioInput.placeholder = ME.role === "worker" ? "Tell owners about yourself..." : "Tell workers about yourself...";
   bioInput.style.cssText = "background:var(--bg2);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:10px 12px;width:100%";
   const bioField = el("label", "field");
   bioField.appendChild(el("span", null, "Bio"));
   bioField.appendChild(bioInput);
   card.appendChild(bioField);
 
-  const skillsInput = el("input");
-  skillsInput.value = (profile.skills || []).join(", ");
-  skillsInput.placeholder = "Plumbing, Electrical, ...";
-  skillsInput.style.cssText = "background:var(--bg2);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:10px 12px;width:100%";
-  const skillsField = el("label", "field");
-  skillsField.appendChild(el("span", null, "Skills (comma separated)"));
-  skillsField.appendChild(skillsInput);
-  card.appendChild(skillsField);
-
-  const tradeInput = el("input");
-  tradeInput.value = profile.trade || "";
-  tradeInput.placeholder = "Plumber, Electrician, ...";
-  tradeInput.style.cssText = "background:var(--bg2);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:10px 12px;width:100%";
-  const tradeField = el("label", "field");
-  tradeField.appendChild(el("span", null, "Trade"));
-  tradeField.appendChild(tradeInput);
-  card.appendChild(tradeField);
+  const phoneInput = el("input");
+  phoneInput.value = ME.phone || "";
+  phoneInput.placeholder = "Phone number";
+  phoneInput.style.cssText = "background:var(--bg2);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:10px 12px;width:100%";
+  const phoneField = el("label", "field");
+  phoneField.appendChild(el("span", null, "Phone"));
+  phoneField.appendChild(phoneInput);
+  card.appendChild(phoneField);
 
   const locInput = el("input");
-  locInput.value = profile.location || "";
+  locInput.value = ME.location || "";
   locInput.placeholder = "City, State";
   locInput.style.cssText = "background:var(--bg2);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:10px 12px;width:100%";
   const locField = el("label", "field");
@@ -709,26 +818,116 @@ function renderProfile() {
   locField.appendChild(locInput);
   card.appendChild(locField);
 
-  const radiusInput = el("input");
-  radiusInput.type = "number";
-  radiusInput.value = profile.serviceRadius || 25;
-  radiusInput.min = 1;
-  radiusInput.max = 200;
-  radiusInput.style.cssText = "background:var(--bg2);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:10px 12px;width:100%";
-  const radiusField = el("label", "field");
-  radiusField.appendChild(el("span", null, "Service Radius (km)"));
-  radiusField.appendChild(radiusInput);
-  card.appendChild(radiusField);
+  // Worker-specific fields
+  if (ME.role === "worker") {
+    const profile = Store.getWorkerProfile(ME.id) || {};
+
+    const skillsInput = el("input");
+    skillsInput.value = (profile.skills || []).join(", ");
+    skillsInput.placeholder = "Plumbing, Electrical, ...";
+    skillsInput.style.cssText = "background:var(--bg2);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:10px 12px;width:100%";
+    const skillsField = el("label", "field");
+    skillsField.appendChild(el("span", null, "Skills (comma separated)"));
+    skillsField.appendChild(skillsInput);
+    card.appendChild(skillsField);
+
+    const tradeInput = el("input");
+    tradeInput.value = profile.trade || "";
+    tradeInput.placeholder = "Plumber, Electrician, ...";
+    tradeInput.style.cssText = "background:var(--bg2);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:10px 12px;width:100%";
+    const tradeField = el("label", "field");
+    tradeField.appendChild(el("span", null, "Trade"));
+    tradeField.appendChild(tradeInput);
+    card.appendChild(tradeField);
+
+    const radiusInput = el("input");
+    radiusInput.type = "number";
+    radiusInput.value = profile.serviceRadius || 25;
+    radiusInput.min = 1;
+    radiusInput.max = 200;
+    radiusInput.style.cssText = "background:var(--bg2);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:10px 12px;width:100%";
+    const radiusField = el("label", "field");
+    radiusField.appendChild(el("span", null, "Service Radius (km)"));
+    radiusField.appendChild(radiusInput);
+    card.appendChild(radiusField);
+  }
+
+  // Owner-specific: show properties and hiring history
+  if (ME.role === "owner") {
+    const props = Store.propertiesFor(ME);
+    if (props.length) {
+      const propSec = el("div", "card");
+      propSec.appendChild(el("h4", null, "My Properties"));
+      props.forEach(p => {
+        const row = el("div", "card");
+        row.style.padding = "10px";
+        row.appendChild(el("b", null, p.name));
+        if (p.address) row.appendChild(el("p", "muted sm", p.address));
+        const tasks = Store.tasksFor(p.id);
+        const openTasks = tasks.filter(t => !["completed", "accepted"].includes(t.status));
+        if (openTasks.length) {
+          row.appendChild(el("p", "muted sm", `${openTasks.length} open task${openTasks.length > 1 ? "s" : ""}`));
+        }
+        propSec.appendChild(row);
+      });
+      wrap.appendChild(propSec);
+    }
+
+    // Hiring history
+    const hires = Store.getHiresForOwner(ME.id);
+    if (hires.length) {
+      const hireSec = el("div", "card");
+      hireSec.appendChild(el("h4", null, "Hiring History"));
+      hires.forEach(h => {
+        const worker = Store.user(h.workerId);
+        const prop = Store.property(h.propertyId);
+        const row = el("div", "card");
+        row.style.padding = "10px";
+        row.appendChild(el("b", null, worker?.name || "Unknown"));
+        row.appendChild(el("p", "muted sm", `${prop?.name || "Unknown"} · ${h.status}`));
+        hireSec.appendChild(row);
+      });
+      wrap.appendChild(hireSec);
+    }
+
+    // Completed tasks
+    const tasks = Store.tasksForUser(ME);
+    const completed = tasks.filter(t => t.status === "accepted" || t.status === "completed");
+    if (completed.length) {
+      const compSec = el("div", "card");
+      compSec.appendChild(el("h4", null, "Completed Tasks"));
+      completed.slice(0, 5).forEach(t => {
+        const row = el("div", "card");
+        row.style.padding = "10px";
+        row.appendChild(el("b", null, t.title));
+        row.appendChild(el("p", "muted sm", t.status));
+        compSec.appendChild(row);
+      });
+      wrap.appendChild(compSec);
+    }
+  }
 
   const saveBtn = el("button", "btn sm", "Save Profile");
   saveBtn.onclick = () => {
-    Store.updateWorkerProfile(ME.id, {
-      bio: bioInput.value,
-      skills: skillsInput.value.split(",").map(s => s.trim()).filter(Boolean),
-      trade: tradeInput.value,
-      location: locInput.value,
-      serviceRadius: parseInt(radiusInput.value) || 25,
-    });
+    // Update user fields
+    const u = Store.idx.users.get(ME.id);
+    if (u) {
+      u.phone = phoneInput.value;
+      u.location = locInput.value;
+      Store.save();
+      ME = Store.user(ME.id);
+    }
+    // Update worker profile if worker
+    if (ME.role === "worker") {
+      const profile = Store.getWorkerProfile(ME.id) || {};
+      Store.updateWorkerProfile(ME.id, {
+        bio: bioInput.value,
+        skills: (document.querySelector("input[placeholder='Plumbing, Electrical, ...']")?.value || "").split(",").map(s => s.trim()).filter(Boolean),
+        trade: document.querySelector("input[placeholder='Plumber, Electrician, ...']")?.value || "",
+        location: locInput.value,
+        serviceRadius: parseInt(document.querySelector("input[type='number']")?.value) || 25,
+      });
+    }
     toast("Profile updated", "good");
   };
   card.appendChild(saveBtn);
@@ -887,28 +1086,95 @@ function openTaskModal(task = null, lat = null, lng = null) {
   dueField.appendChild(dueInput);
   body.appendChild(dueField);
 
-  // Photo (required for new tasks)
+  // Photo (optional)
+  const photoField = el("label", "field");
+  photoField.appendChild(el("span", null, "Photo (optional)"));
   const photoInput = el("input");
   photoInput.type = "file";
   photoInput.accept = "image/*";
-  photoInput.setAttribute("capture", "environment");
-  if (!task) photoInput.required = true;
-  const photoField = el("label", "field");
-  photoField.appendChild(el("span", null, task ? "Photo (optional)" : "Photo (required)"));
+  photoInput.style.cssText = "background:var(--bg2);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:10px 12px;width:100%";
   photoField.appendChild(photoInput);
+
+  // Camera capture button
+  const camBtn = el("button", "btn ghost sm", "📷 Take Photo");
+  camBtn.onclick = () => openCameraModal((dataUrl) => {
+    // Store the captured photo data URL in a hidden field
+    photoInput.dataset.captured = dataUrl;
+    // Show preview
+    const preview = photoField.querySelector(".photo-preview");
+    if (preview) preview.remove();
+    const img = el("img", "photo-preview");
+    img.src = dataUrl;
+    img.style.cssText = "max-width:100%;max-height:150px;border-radius:8px;margin-top:8px";
+    photoField.appendChild(img);
+  });
+  photoField.appendChild(camBtn);
+
+  // Photo placeholder
+  const placeholder = el("div", "photo-placeholder");
+  placeholder.style.cssText = "border:2px dashed var(--line);border-radius:10px;padding:20px;text-align:center;color:var(--dim);font-size:13px;margin-top:8px";
+  placeholder.textContent = "📷 No photo attached";
+  photoField.appendChild(placeholder);
+
+  // Show preview when file selected
+  photoInput.onchange = () => {
+    if (photoInput.files.length) {
+      placeholder.style.display = "none";
+      const reader = new FileReader();
+      reader.onload = () => {
+        const preview = photoField.querySelector(".photo-preview");
+        if (preview) preview.remove();
+        const img = el("img", "photo-preview");
+        img.src = reader.result;
+        img.style.cssText = "max-width:100%;max-height:150px;border-radius:8px;margin-top:8px";
+        photoField.appendChild(img);
+      };
+      reader.readAsDataURL(photoInput.files[0]);
+    } else {
+      placeholder.style.display = "";
+    }
+  };
+
   body.appendChild(photoField);
 
-  // Location
+  // Location map
+  const mapField = el("label", "field");
+  mapField.appendChild(el("span", null, "Location (click map to set)"));
+  const mapDiv = el("div");
+  mapDiv.id = "taskMap";
+  mapDiv.style.cssText = "height:200px;border-radius:10px;border:1px solid var(--line);overflow:hidden";
+  mapField.appendChild(mapDiv);
+
+  // Location display
+  const locDisplay = el("p", "muted sm", "No location set");
+  mapField.appendChild(locDisplay);
+
+  // Use my location button
   const locBtn = el("button", "btn ghost sm", "📍 Use My Location");
   locBtn.onclick = () => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        pos => { lat = pos.coords.latitude; lng = pos.coords.longitude; toast("Location captured", "good"); },
+        pos => {
+          lat = pos.coords.latitude;
+          lng = pos.coords.longitude;
+          locDisplay.textContent = `Location: ${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+          if (typeof L !== "undefined" && taskMap) {
+            taskMap.setView([lat, lng], 15);
+            if (taskMarker) taskMarker.setLatLng([lat, lng]);
+            else taskMarker = L.marker([lat, lng], { draggable: true }).addTo(taskMap);
+          }
+          toast("Location captured", "good");
+        },
         () => toast("Location denied", "bad")
       );
     }
   };
-  body.appendChild(locBtn);
+  mapField.appendChild(locBtn);
+  body.appendChild(mapField);
+
+  // Initialize map after modal is open
+  let taskMap = null;
+  let taskMarker = null;
 
   // Actions
   const actions = el("div", "modal-actions");
@@ -920,9 +1186,40 @@ function openTaskModal(task = null, lat = null, lng = null) {
 
   const m = modal(task ? "Edit Task" : "New Task", body);
   cancelBtn.onclick = () => closeModal(m);
+
+  // Initialize map after modal opens
+  setTimeout(() => {
+    if (typeof L !== "undefined") {
+      taskMap = L.map("taskMap").setView([34.0522, -118.2437], 10);
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "© OpenStreetMap contributors"
+      }).addTo(taskMap);
+
+      // Click to place marker
+      taskMap.on("click", (e) => {
+        lat = e.latlng.lat;
+        lng = e.latlng.lng;
+        locDisplay.textContent = `Location: ${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+        if (taskMarker) {
+          taskMarker.setLatLng([lat, lng]);
+        } else {
+          taskMarker = L.marker([lat, lng], { draggable: true }).addTo(taskMap);
+        }
+      });
+
+      // If editing, set existing location
+      if (task && task.lat != null && task.lng != null) {
+        lat = task.lat;
+        lng = task.lng;
+        taskMap.setView([lat, lng], 15);
+        taskMarker = L.marker([lat, lng], { draggable: true }).addTo(taskMap);
+        locDisplay.textContent = `Location: ${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+      }
+    }
+  }, 100);
+
   saveBtn.onclick = () => {
     if (!titleInput.value.trim()) { toast("Please enter a task title", "bad"); return; }
-    if (!task && !photoInput.files.length) { toast("Please attach a photo", "bad"); return; }
     const data = {
       propertyId: propSel.value,
       title: titleInput.value,
@@ -935,26 +1232,218 @@ function openTaskModal(task = null, lat = null, lng = null) {
       Store.updateTask(task.id, data);
       toast("Task updated", "good");
     } else {
-      // Handle photo
+      // Handle photo - check for captured photo first, then file input
+      const capturedDataUrl = photoInput.dataset.captured;
       const file = photoInput.files[0];
-      if (file) {
+
+      const createTask = (photoDataUrl) => {
+        let photoId = null;
+        if (photoDataUrl) {
+          const photo = Store.addPhoto({ propertyId: propSel.value, uploaderId: ME.id, dataUrl: photoDataUrl, kind: "issue" });
+          photoId = photo.id;
+        }
+        Store.addTask({ ...data, createdBy: ME.id, photoId });
+        closeModal(m);
+        toast("Task created", "good");
+        render();
+      };
+
+      if (capturedDataUrl) {
+        // Compress and use captured photo
+        compressImage(capturedDataUrl, (compressed) => createTask(compressed));
+      } else if (file) {
         const reader = new FileReader();
         reader.onload = () => {
-          const photo = Store.addPhoto({ propertyId: propSel.value, uploaderId: ME.id, dataUrl: reader.result, kind: "issue" });
-          Store.addTask({ ...data, createdBy: ME.id, photoId: photo.id });
-          closeModal(m);
-          toast("Task created", "good");
-          render();
+          compressImage(reader.result, (compressed) => createTask(compressed));
         };
         reader.readAsDataURL(file);
-        return;
+      } else {
+        // No photo - create task without photo
+        createTask(null);
       }
-      Store.addTask({ ...data, createdBy: ME.id });
-      closeModal(m);
-      toast("Task created", "good");
     }
     closeModal(m);
     render();
+  };
+  openModal(m);
+}
+
+// Compress image to reduce storage
+function compressImage(dataUrl, callback) {
+  const img = new Image();
+  img.onload = () => {
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    const maxWidth = 800;
+    const maxHeight = 600;
+    let w = img.width;
+    let h = img.height;
+    if (w > maxWidth) { h = (h * maxWidth) / w; w = maxWidth; }
+    if (h > maxHeight) { w = (w * maxHeight) / h; h = maxHeight; }
+    canvas.width = w;
+    canvas.height = h;
+    ctx.drawImage(img, 0, 0, w, h);
+    const compressed = canvas.toDataURL("image/jpeg", 0.7);
+    callback(compressed);
+  };
+  img.onerror = () => callback(dataUrl);
+  img.src = dataUrl;
+}
+
+// Camera capture modal
+function openCameraModal(onCapture) {
+  const body = el("div", "stack");
+  body.style.gap = "12px";
+
+  const video = el("video");
+  video.style.cssText = "width:100%;border-radius:10px;background:#000";
+  video.autoplay = true;
+  video.playsInline = true;
+  body.appendChild(video);
+
+  const previewImg = el("img");
+  previewImg.style.cssText = "width:100%;border-radius:10px;display:none";
+  body.appendChild(previewImg);
+
+  const actions = el("div", "modal-actions");
+  const cancelBtn = el("button", "btn ghost", "Cancel");
+  const captureBtn = el("button", "btn", "📷 Capture");
+  const retakeBtn = el("button", "btn ghost", "Retake");
+  retakeBtn.style.display = "none";
+  const useBtn = el("button", "btn", "Use Photo");
+  useBtn.style.display = "none";
+  actions.appendChild(cancelBtn);
+  actions.appendChild(captureBtn);
+  actions.appendChild(retakeBtn);
+  actions.appendChild(useBtn);
+  body.appendChild(actions);
+
+  const m = modal("Take Photo", body);
+  cancelBtn.onclick = () => {
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    closeModal(m);
+  };
+
+  let stream = null;
+  let capturedDataUrl = null;
+
+  // Start camera
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+      .then(s => {
+        stream = s;
+        video.srcObject = s;
+      })
+      .catch(() => {
+        toast("Camera access denied or not available", "bad");
+        closeModal(m);
+      });
+  } else {
+    toast("Camera not supported on this device", "bad");
+    closeModal(m);
+  }
+
+  captureBtn.onclick = () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext("2d").drawImage(video, 0, 0);
+    capturedDataUrl = canvas.toDataURL("image/jpeg", 0.8);
+    previewImg.src = capturedDataUrl;
+    previewImg.style.display = "";
+    video.style.display = "none";
+    captureBtn.style.display = "none";
+    retakeBtn.style.display = "";
+    useBtn.style.display = "";
+    if (stream) stream.getTracks().forEach(t => t.stop());
+  };
+
+  retakeBtn.onclick = () => {
+    previewImg.style.display = "none";
+    video.style.display = "";
+    captureBtn.style.display = "";
+    retakeBtn.style.display = "none";
+    useBtn.style.display = "none";
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+        .then(s => {
+          stream = s;
+          video.srcObject = s;
+        });
+    }
+  };
+
+  useBtn.onclick = () => {
+    if (capturedDataUrl) {
+      onCapture(capturedDataUrl);
+    }
+    closeModal(m);
+  };
+
+  openModal(m);
+}
+
+// Worker requests work from an owner
+function openRequestWorkModal(owner) {
+  const props = Store.propertiesFor(owner);
+  if (!props.length) { toast("This owner has no properties yet", "bad"); return; }
+
+  const body = el("div", "stack");
+  body.style.gap = "12px";
+
+  body.appendChild(el("p", null, `Request to work for ${owner.name}`));
+
+  const propSel = el("select");
+  propSel.style.cssText = "background:var(--bg2);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:10px 12px;width:100%";
+  props.forEach(p => {
+    const o = el("option", null, p.name);
+    o.value = p.id;
+    propSel.appendChild(o);
+  });
+  const propField = el("label", "field");
+  propField.appendChild(el("span", null, "Property"));
+  propField.appendChild(propSel);
+  body.appendChild(propField);
+
+  const msgInput = el("textarea");
+  msgInput.placeholder = "Message to owner...";
+  msgInput.rows = 3;
+  msgInput.style.cssText = "background:var(--bg2);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:10px 12px;width:100%";
+  const msgField = el("label", "field");
+  msgField.appendChild(el("span", null, "Message"));
+  msgField.appendChild(msgInput);
+  body.appendChild(msgField);
+
+  const actions = el("div", "modal-actions");
+  const cancelBtn = el("button", "btn ghost", "Cancel");
+  const sendBtn = el("button", "btn", "Send Request");
+  actions.appendChild(cancelBtn);
+  actions.appendChild(sendBtn);
+  body.appendChild(actions);
+
+  const m = modal("Request Work", body);
+  cancelBtn.onclick = () => closeModal(m);
+  sendBtn.onclick = () => {
+    try {
+      // Create a task request from worker to owner
+      const taskId = uid();
+      Store.addTask({
+        propertyId: propSel.value,
+        createdBy: ME.id,
+        title: `Work request from ${ME.name}`,
+        description: msgInput.value,
+        priority: "normal",
+        status: "open",
+        assigneeId: ME.id,
+      });
+      // Send message to owner
+      Store.sendMessage(ME.id, owner.id, `I'd like to work on your property: ${props.find(p => p.id === propSel.value)?.name}. Message: ${msgInput.value}`);
+      closeModal(m);
+      toast("Work request sent", "good");
+      render();
+    } catch (e) {
+      toast(e.message, "bad");
+    }
   };
   openModal(m);
 }
@@ -1292,8 +1781,9 @@ const TUTORIAL_STEPS = [
   { title: "Dashboard", text: "This is your home. See all your tasks, properties, and progress at a glance." },
   { title: "Properties", text: "Manage your properties. Add details, photos, and view task history." },
   { title: "Tasks", text: "Create tasks with photos and locations. Workers can request to work on them." },
-  { title: "Hiring", text: "Hire trade workers for your properties. Manage your team." },
-  { title: "Messages", text: "Chat with workers and owners. Negotiate pricing and scheduling." },
+  { title: "People", text: "Find workers or owners. Message them, hire them, or request work." },
+  { title: "Map", text: "See all your properties and tasks on an interactive map." },
+  { title: "Profile", text: "Update your bio, skills, and contact information." },
   { title: "Settings", text: "Update your profile, change your password, or replay this tutorial anytime." },
   { title: "You're all set! 🎉", text: "That's the basics. You can always access this tutorial again from Settings. Enjoy using Habitat!" },
 ];

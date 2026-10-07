@@ -313,6 +313,56 @@ h1, h2, h3, h4 { letter-spacing: -.02em; line-height: 1.2; }
 .map-legend .lg { display: inline-flex; align-items: center; gap: 6px; }
 .map-legend .sw { width: 10px; height: 10px; border-radius: 50%; }
 
+/* ============ PHOTO ============ */
+.photo-preview {
+  max-width: 100%;
+  max-height: 150px;
+  border-radius: 8px;
+  margin-top: 8px;
+  object-fit: cover;
+}
+.photo-placeholder {
+  border: 2px dashed var(--line);
+  border-radius: 10px;
+  padding: 20px;
+  text-align: center;
+  color: var(--dim);
+  font-size: 13px;
+  margin-top: 8px;
+}
+
+/* ============ MAP IN MODAL ============ */
+#taskMap {
+  height: 200px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+/* ============ PEOPLE CARDS ============ */
+.people-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.people-card .avatar {
+  width: 40px;
+  height: 40px;
+  font-size: 16px;
+}
+
+/* ============ CAMERA MODAL ============ */
+.camera-video {
+  width: 100%;
+  border-radius: 10px;
+  background: #000;
+}
+.camera-preview {
+  width: 100%;
+  border-radius: 10px;
+  display: none;
+}
+
 /* ============ RESPONSIVE ============ */
 @media (max-width: 768px) {
   .landing-hero { grid-template-columns: 1fr; padding: 40px 20px; }
