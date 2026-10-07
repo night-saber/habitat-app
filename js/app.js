@@ -1,5 +1,7 @@
-/* Habitat — clean, working app from scratch */
+/* Habitat — App (UI layer) */
 "use strict";
+
+import { Store, uid, sha256, DB_KEY, SESSION_KEY } from "./store.js";
 
 // ==================== STATE ====================
 let ME = null;
@@ -80,385 +82,24 @@ function relTime(iso) {
   return new Date(iso).toLocaleDateString();
 }
 
-// ==================== STORE ====================
-const DB_KEY = "habitat.db.v1";
-const SESSION_KEY = "habitat.session.v1";
-
-function uid() {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-}
-
-async function sha256(text) {
-  try {
-    const buf = new TextEncoder().encode(text);
-    const d = await crypto.subtle.digest("SHA-256", buf);
-    return [...new Uint8Array(d)].map(b => b.toString(16).padStart(2, "0")).join("");
-  } catch {
-    let h = 0;
-    for (let i = 0; i < text.length; i++) h = (h * 31 + text.charCodeAt(i)) >>> 0;
-    return h.toString(16);
+function emptyState(text, sub, actionLabel, onAction) {
+  const d = el("div", "empty");
+  d.appendChild(el("p", null, text));
+  if (sub) d.appendChild(el("p", "muted sm", sub));
+  if (actionLabel && onAction) {
+    const b = el("button", "btn", actionLabel);
+    b.onclick = onAction;
+    d.appendChild(b);
   }
+  return d;
 }
 
-const Store = {
-  db: { users: [], properties: [], tasks: [], photos: [], groups: [], activity: [] },
-  idx: {},
+function statusPill(status) {
+  const labels = { open: "Open", requested: "Requested", assigned: "Assigned", in_progress: "In Progress", completed: "Completed", accepted: "Accepted" };
+  return el("span", `pill ${status}`, labels[status] || status);
+}
 
-  load() {
-    try {
-      const raw = localStorage.getItem(DB_KEY);
-      if (raw) this.db = JSON.parse(raw);
-    } catch { /* fresh start */ }
-    this.reindex();
-  },
-
-  reindex() {
-    const byId = arr => { const m = new Map(); for (const r of arr) m.set(r.id, r); return m; };
-    const groupBy = (arr, key) => {
-      const m = new Map();
-      for (const r of arr) {
-        const k = r[key];
-        if (k == null) continue;
-        if (!m.has(k)) m.set(k, []);
-        m.get(k).push(r);
-      }
-      return m;
-    };
-    const usersByEmail = new Map();
-    for (const u of this.db.users) usersByEmail.set(u.email, u);
-    const groupsByMember = new Map();
-    for (const g of this.db.groups) {
-      for (const mid of g.memberIds || []) {
-        if (!groupsByMember.has(mid)) groupsByMember.set(mid, []);
-        groupsByMember.get(mid).push(g.id);
-      }
-    }
-    this.idx = {
-      users: byId(this.db.users),
-      usersByEmail,
-      properties: byId(this.db.properties),
-      tasks: byId(this.db.tasks),
-      photos: byId(this.db.photos),
-      groups: byId(this.db.groups),
-      propsByOwner: groupBy(this.db.properties, "ownerId"),
-      tasksByProperty: groupBy(this.db.tasks, "propertyId"),
-      photosByProperty: groupBy(this.db.photos, "propertyId"),
-      groupsByOwner: groupBy(this.db.groups, "ownerId"),
-      groupsByMember,
-    };
-  },
-
-  save() {
-    try { localStorage.setItem(DB_KEY, JSON.stringify(this.db)); } catch { /* quota */ }
-  },
-
-  commit() { this.save(); },
-
-  log(userId, action) {
-    this.db.activity.unshift({ id: uid(), at: new Date().toISOString(), userId, action });
-    if (this.db.activity.length > 200) this.db.activity.length = 200;
-  },
-
-  // Auth
-  async signup({ name, email, password, role }) {
-    email = (email || "").trim().toLowerCase();
-    name = (name || "").trim();
-    if (!name || !email || !password) throw new Error("Please fill in all fields.");
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error("That email doesn't look right.");
-    if (password.length < 8) throw new Error("Password must be 8+ characters.");
-    if (this.idx.usersByEmail.has(email)) throw new Error("That email is already registered.");
-    const user = {
-      id: uid(), name, email,
-      pw: await sha256(password + email),
-      role: role === "worker" ? "worker" : "owner",
-      active: true, createdAt: new Date().toISOString(), lastSeen: null,
-    };
-    this.db.users.push(user);
-    this.log(user.id, "account.created");
-    this.reindex();
-    this.save();
-    return this.publicUser(user);
-  },
-
-  async login(email, password) {
-    email = (email || "").trim().toLowerCase();
-    const u = this.idx.usersByEmail.get(email);
-    if (!u) throw new Error("No account with that email.");
-    if (!u.active) throw new Error("This account has been disabled.");
-    if (u.pw !== await sha256(password + email)) throw new Error("Wrong password.");
-    u.lastSeen = new Date().toISOString();
-    this.log(u.id, "account.login");
-    this.save();
-    return this.publicUser(u);
-  },
-
-  async resetPassword(email, next) {
-    email = (email || "").trim().toLowerCase();
-    const u = this.idx.usersByEmail.get(email);
-    if (!u) throw new Error("No account with that email.");
-    if (!next || next.length < 8) throw new Error("Password must be 8+ characters.");
-    u.pw = await sha256(next + email);
-    this.log(u.id, "account.password_reset");
-    this.save();
-    return this.publicUser(u);
-  },
-
-  publicUser(u) {
-    if (!u) return null;
-    const { pw, ...rest } = u;
-    return rest;
-  },
-
-  user(id) { return this.publicUser(this.idx.users.get(id)); },
-
-  setSession(id) {
-    try {
-      if (id) localStorage.setItem(SESSION_KEY, id);
-      else localStorage.removeItem(SESSION_KEY);
-    } catch { /* ignore */ }
-  },
-  session() { try { return localStorage.getItem(SESSION_KEY); } catch { return null; } },
-
-  // Properties
-  addProperty({ ownerId, name, address, lat, lng, notes }) {
-    const p = {
-      id: uid(), ownerId, name: (name || "Property").trim(),
-      address: address || "", notes: notes || "",
-      lat: lat ?? null, lng: lng ?? null,
-      workers: [], groups: [], createdAt: new Date().toISOString(),
-    };
-    this.db.properties.push(p);
-    this.log(ownerId, "property.created");
-    this.reindex();
-    this.save();
-    return p;
-  },
-
-  property(id) { return this.idx.properties.get(id) || null; },
-
-  propertiesFor(user) {
-    if (!user) return [];
-    if (user.role === "owner") return this.idx.propsByOwner.get(user.id) || [];
-    const myGroups = new Set(this.idx.groupsByMember.get(user.id) || []);
-    return this.db.properties.filter(p =>
-      p.workers.includes(user.id) || (p.groups || []).some(g => myGroups.has(g)));
-  },
-
-  updateProperty(id, patch) {
-    const p = this.property(id);
-    if (!p) return null;
-    Object.assign(p, patch);
-    this.log(p.ownerId, "property.updated");
-    this.reindex();
-    this.save();
-    return p;
-  },
-
-  deleteProperty(id) {
-    const p = this.property(id);
-    if (!p) return;
-    this.db.properties = this.db.properties.filter(x => x.id !== id);
-    this.db.tasks = this.db.tasks.filter(t => t.propertyId !== id);
-    this.db.photos = this.db.photos.filter(ph => ph.propertyId !== id);
-    this.log(p.ownerId, "property.deleted");
-    this.reindex();
-    this.save();
-  },
-
-  // Tasks
-  addTask({ propertyId, createdBy, title, description, lat, lng, priority, assigneeId, dueDate }) {
-    const t = {
-      id: uid(), propertyId, createdBy,
-      title: (title || "Task").trim(), description: description || "",
-      lat: lat ?? null, lng: lng ?? null,
-      priority: priority || "normal", status: "open",
-      assigneeId: assigneeId || null, dueDate: dueDate || null,
-      photoId: null, completionPhotoId: null,
-      createdAt: new Date().toISOString(), completedAt: null, completedBy: null,
-      comments: [],
-    };
-    this.db.tasks.push(t);
-    this.log(createdBy, "task.created");
-    this.reindex();
-    this.save();
-    return t;
-  },
-
-  task(id) { return this.idx.tasks.get(id) || null; },
-  tasksFor(propertyId) { return this.idx.tasksByProperty.get(propertyId) || []; },
-
-  tasksForUser(user) {
-    if (!user) return [];
-    if (user.role === "owner") {
-      const ids = new Set((this.idx.propsByOwner.get(user.id) || []).map(p => p.id));
-      return this.db.tasks.filter(t => ids.has(t.propertyId));
-    }
-    const propIds = new Set(this.propertiesFor(user).map(p => p.id));
-    return this.db.tasks.filter(t => propIds.has(t.propertyId));
-  },
-
-  updateTask(id, patch) {
-    const t = this.task(id);
-    if (!t) return null;
-    Object.assign(t, patch);
-    if (patch.status === "done" && !t.completedAt) t.completedAt = new Date().toISOString();
-    if (patch.status && patch.status !== "done") t.completedAt = null;
-    this.log(t.createdBy, "task.updated");
-    this.save();
-    return t;
-  },
-
-  setTaskStatus(id, status, userId) {
-    const t = this.task(id);
-    if (!t) return null;
-    t.status = status;
-    if (status === "done") { t.completedAt = new Date().toISOString(); t.completedBy = userId; }
-    else t.completedAt = null;
-    this.log(userId, status === "done" ? "task.completed" : "task.reopened");
-    this.save();
-    return t;
-  },
-
-  deleteTask(id) {
-    const t = this.task(id);
-    if (!t) return;
-    this.db.tasks = this.db.tasks.filter(x => x.id !== id);
-    this.log(t.createdBy, "task.deleted");
-    this.reindex();
-    this.save();
-  },
-
-  // Photos
-  addPhoto({ propertyId, taskId, uploaderId, dataUrl, caption, lat, lng, kind }) {
-    const ph = {
-      id: uid(), propertyId, taskId: taskId || null, uploaderId,
-      dataUrl, caption: caption || "", lat: lat ?? null, lng: lng ?? null,
-      kind: kind || "issue", at: new Date().toISOString(),
-    };
-    this.db.photos.push(ph);
-    this.reindex();
-    this.save();
-    return ph;
-  },
-
-  photo(id) { return this.idx.photos.get(id) || null; },
-  photosFor(propertyId) { return this.idx.photosByProperty.get(propertyId) || []; },
-
-  photosForUser(user) {
-    const ids = new Set(this.propertiesFor(user).map(p => p.id));
-    return this.db.photos.filter(ph => ids.has(ph.propertyId));
-  },
-
-  // Groups
-  addGroup({ ownerId, name, description, color }) {
-    const g = {
-      id: uid(), ownerId, name: (name || "Crew").trim(),
-      description: description || "", color: color || "#34d399",
-      memberIds: [], createdAt: new Date().toISOString(),
-    };
-    this.db.groups.push(g);
-    this.log(ownerId, "group.created");
-    this.reindex();
-    this.save();
-    return g;
-  },
-
-  group(id) { return this.idx.groups.get(id) || null; },
-  groupsFor(ownerId) { return this.idx.groupsByOwner.get(ownerId) || []; },
-
-  updateGroup(id, patch) {
-    const g = this.group(id);
-    if (!g) return null;
-    Object.assign(g, patch);
-    this.log(g.ownerId, "group.updated");
-    this.save();
-    return g;
-  },
-
-  deleteGroup(id) {
-    const g = this.group(id);
-    if (!g) return;
-    this.db.groups = this.db.groups.filter(x => x.id !== id);
-    for (const p of this.db.properties) {
-      if (p.groups) p.groups = p.groups.filter(x => x !== id);
-    }
-    this.log(g.ownerId, "group.deleted");
-    this.reindex();
-    this.save();
-  },
-
-  setGroupMembers(groupId, memberIds) {
-    const g = this.group(groupId);
-    if (!g) return null;
-    g.memberIds = [...new Set(memberIds)];
-    this.log(g.ownerId, "group.members_set");
-    this.reindex();
-    this.save();
-    return g;
-  },
-
-  // Workers
-  workers() {
-    return this.db.users.filter(u => u.role === "worker").map(u => this.publicUser(u));
-  },
-
-  // Stats
-  statsFor(user) {
-    const tasks = this.tasksForUser(user);
-    const props = this.propertiesFor(user);
-    const done = tasks.filter(t => t.status === "done");
-    const today = new Date(new Date().toDateString());
-    return {
-      properties: props.length,
-      open: tasks.filter(t => t.status === "open").length,
-      doing: tasks.filter(t => t.status === "doing").length,
-      done: done.length,
-      overdue: tasks.filter(t => t.status !== "done" && t.dueDate && new Date(t.dueDate) < today).length,
-      photos: this.photosForUser(user).length,
-      completion: tasks.length ? Math.round((done.length / tasks.length) * 100) : 0,
-    };
-  },
-
-  // Demo data
-  async createDemoData() {
-    const existing = this.idx.usersByEmail.get("demo@habitat.app");
-    if (existing) return this.publicUser(existing);
-
-    const owner = await this.signup({ name: "Demo Owner", email: "demo@habitat.app", password: "demo1234", role: "owner" });
-    const w1 = await this.signup({ name: "Alex Plumber", email: "alex@habitat.app", password: "demo1234", role: "worker" });
-    const w2 = await this.signup({ name: "Sam Electrician", email: "sam@habitat.app", password: "demo1234", role: "worker" });
-    const w3 = await this.signup({ name: "Jordan Roofer", email: "jordan@habitat.app", password: "demo1234", role: "worker" });
-
-    const crew = this.addGroup({ ownerId: owner.id, name: "Home Crew", description: "General repairs", color: "#34d399" });
-    this.setGroupMembers(crew.id, [w1.id, w2.id]);
-
-    const p1 = this.addProperty({ ownerId: owner.id, name: "Maple Street House", address: "123 Maple St", lat: 34.0522, lng: -118.2437, notes: "Front and back yard" });
-    const p2 = this.addProperty({ ownerId: owner.id, name: "Oak Avenue Cottage", address: "456 Oak Ave", lat: 34.0622, lng: -118.2537, notes: "Garden needs work" });
-    this.assignGroup(p1.id, crew.id);
-
-    const today = new Date();
-    const iso = d => new Date(today.getTime() + d * 86400000).toISOString().slice(0, 10);
-
-    this.addTask({ propertyId: p1.id, createdBy: owner.id, title: "Fix kitchen faucet", description: "The kitchen faucet is leaking from the base. Needs a new cartridge.", priority: "high", lat: 34.0532, lng: -118.2447, assigneeId: w1.id, dueDate: iso(3) });
-    this.addTask({ propertyId: p1.id, createdBy: owner.id, title: "Paint living room", description: "Walls need repainting. Color: warm white.", priority: "normal", lat: 34.0512, lng: -118.2427, dueDate: iso(7) });
-    this.addTask({ propertyId: p2.id, createdBy: owner.id, title: "Replace roof shingles", description: "Several shingles are missing on the south side.", priority: "high", lat: 34.0632, lng: -118.2547, assigneeId: w3.id, dueDate: iso(-1) });
-    this.addTask({ propertyId: p2.id, createdBy: owner.id, title: "Install outdoor lights", description: "Need motion-sensor lights on the back porch.", priority: "low", lat: 34.0612, lng: -118.2527, assigneeId: w2.id, dueDate: iso(14) });
-    this.addTask({ propertyId: p1.id, createdBy: owner.id, title: "Trim hedges", description: "Front hedges are overgrown. Trim to 3ft height.", priority: "low", lat: 34.0542, lng: -118.2457, dueDate: iso(21) });
-
-    this.commit();
-    return owner;
-  },
-
-  assignGroup(propId, groupId) {
-    const p = this.property(propId);
-    if (!p) return;
-    p.groups = p.groups || [];
-    if (!p.groups.includes(groupId)) p.groups.push(groupId);
-    this.save();
-  },
-};
-
-// ==================== APP ====================
+// ==================== BOOT ====================
 function boot() {
   try {
     Store.load();
@@ -628,10 +269,11 @@ function buildNav() {
   const nav = $("#tabs");
   nav.innerHTML = "";
   const tabs = ME.role === "owner"
-    ? ["dashboard", "tasks", "map", "people", "settings"]
-    : ["dashboard", "tasks", "map", "settings"];
+    ? ["dashboard", "properties", "tasks", "hiring", "messages", "settings"]
+    : ["dashboard", "properties", "crews", "messages", "profile"];
+  const labels = { dashboard: "Dashboard", properties: "Properties", tasks: "Tasks", hiring: "Hiring", messages: "Messages", settings: "Settings", crews: "Crews", profile: "Profile" };
   tabs.forEach(v => {
-    const b = el("button", "navbtn", v.charAt(0).toUpperCase() + v.slice(1));
+    const b = el("button", "navbtn", labels[v]);
     b.dataset.view = v;
     b.onclick = () => go(v);
     nav.appendChild(b);
@@ -640,12 +282,12 @@ function buildNav() {
   // Bottom nav
   const bn = $("#bottomNav");
   bn.innerHTML = "";
-  const icons = { dashboard: "📊", tasks: "📋", map: "🗺️", people: "👷", settings: "⚙️" };
-  const labels = { dashboard: "Home", tasks: "Tasks", map: "Map", people: "People", settings: "Settings" };
+  const icons = { dashboard: "📊", properties: "🏠", tasks: "📋", hiring: "🤝", messages: "💬", settings: "⚙️", crews: "👷", profile: "👤" };
+  const blabels = { dashboard: "Home", properties: "Properties", tasks: "Tasks", hiring: "Hiring", messages: "Messages", settings: "Settings", crews: "Crews", profile: "Profile" };
   tabs.forEach(v => {
     const b = el("button", "bottom-nav-btn");
     b.dataset.view = v;
-    b.innerHTML = `${icons[v]}<span>${labels[v]}</span>`;
+    b.innerHTML = `${icons[v]}<span>${blabels[v]}</span>`;
     b.onclick = () => go(v);
     bn.appendChild(b);
   });
@@ -663,9 +305,12 @@ function go(v) {
 function render() {
   if (!ME) return;
   if (view === "dashboard") renderDashboard();
+  else if (view === "properties") renderProperties();
   else if (view === "tasks") renderTasks();
-  else if (view === "map") renderMap();
-  else if (view === "people") renderPeople();
+  else if (view === "hiring") renderHiring();
+  else if (view === "messages") renderMessages();
+  else if (view === "crews") renderCrews();
+  else if (view === "profile") renderProfile();
   else if (view === "settings") renderSettings();
 }
 
@@ -702,7 +347,7 @@ function renderDashboard() {
   }
 
   // Tasks by status
-  const overdue = tasks.filter(t => t.status !== "done" && t.dueDate && new Date(t.dueDate) < new Date(new Date().toDateString()));
+  const overdue = tasks.filter(t => !["completed", "accepted"].includes(t.status) && t.dueDate && new Date(t.dueDate) < new Date(new Date().toDateString()));
   if (overdue.length) {
     const sec = el("div", "card");
     sec.appendChild(el("h3", null, "⚠️ Overdue"));
@@ -710,7 +355,7 @@ function renderDashboard() {
     wrap.appendChild(sec);
   }
 
-  const doing = tasks.filter(t => t.status === "doing");
+  const doing = tasks.filter(t => t.status === "in_progress" || t.status === "assigned");
   if (doing.length) {
     const sec = el("div", "card");
     sec.appendChild(el("h3", null, "In Progress"));
@@ -736,11 +381,11 @@ function taskCard(t) {
   const card = el("div", `card task-card pri-${t.priority} st-${t.status}`);
   const head = el("div", "task-head");
   head.appendChild(el("h4", null, t.title));
-  head.appendChild(el("span", `pill ${t.status}`, t.status));
+  head.appendChild(statusPill(t.status));
   card.appendChild(head);
 
   const meta = el("div", "muted sm");
-  const bits = [prop ? prop.name : "", t.dueDate ? `Due: ${t.dueDate}` : ""].filter(Boolean);
+  const bits = [prop ? prop.name : "", t.dueDate ? `Due: ${t.dueDate}` : "", t.price ? `$${t.price}` : ""].filter(Boolean);
   meta.textContent = bits.join(" · ");
   card.appendChild(meta);
 
@@ -749,44 +394,107 @@ function taskCard(t) {
   }
 
   const acts = el("div", "card-actions");
-  if (t.status === "open") {
-    const startBtn = el("button", "btn sm ghost", "Start");
-    startBtn.onclick = () => { Store.setTaskStatus(t.id, "doing", ME.id); render(); };
-    acts.appendChild(startBtn);
-  }
-  if (t.status !== "done") {
-    const doneBtn = el("button", "btn sm", "Mark Done");
-    doneBtn.onclick = () => { Store.setTaskStatus(t.id, "done", ME.id); toast("Task completed!", "good"); render(); };
-    acts.appendChild(doneBtn);
-  } else {
-    const reopenBtn = el("button", "btn sm ghost", "Reopen");
-    reopenBtn.onclick = () => { Store.setTaskStatus(t.id, "open", ME.id); render(); };
-    acts.appendChild(reopenBtn);
-  }
+  // Owner actions
   if (ME.role === "owner") {
-    const delBtn = el("button", "btn sm ghost danger", "Delete");
-    delBtn.onclick = () => {
-      if (confirm("Delete this task?")) { Store.deleteTask(t.id); render(); }
-    };
-    acts.appendChild(delBtn);
+    if (t.status === "requested") {
+      const req = Store.db.taskRequests.find(r => r.taskId === t.id && r.status === "pending");
+      if (req) {
+        const accBtn = el("button", "btn sm", "Accept");
+        accBtn.onclick = () => { Store.respondToRequest(req.id, true); toast("Request accepted", "good"); render(); };
+        acts.appendChild(accBtn);
+        const decBtn = el("button", "btn sm ghost danger", "Decline");
+        decBtn.onclick = () => { Store.respondToRequest(req.id, false); toast("Request declined", "info"); render(); };
+        acts.appendChild(decBtn);
+      }
+    }
+    if (t.status === "completed") {
+      const accBtn = el("button", "btn sm", "Accept & Record");
+      accBtn.onclick = () => { Store.acceptTask(t.id); toast("Task accepted and recorded", "good"); render(); };
+      acts.appendChild(accBtn);
+    }
+    if (t.status === "open" || t.status === "requested") {
+      const delBtn = el("button", "btn sm ghost danger", "Delete");
+      delBtn.onclick = () => {
+        if (confirm("Delete this task?")) { Store.deleteTask(t.id); render(); }
+      };
+      acts.appendChild(delBtn);
+    }
+  }
+  // Worker actions
+  if (ME.role === "worker") {
+    if (t.status === "open") {
+      const reqBtn = el("button", "btn sm", "Request");
+      reqBtn.onclick = () => openRequestModal(t);
+      acts.appendChild(reqBtn);
+    }
+    if (t.status === "assigned" && t.assigneeId === ME.id) {
+      const startBtn = el("button", "btn sm", "Start");
+      startBtn.onclick = () => { Store.setTaskStatus(t.id, "in_progress", ME.id); toast("Task started", "good"); render(); };
+      acts.appendChild(startBtn);
+    }
+    if (t.status === "in_progress" && t.assigneeId === ME.id) {
+      const doneBtn = el("button", "btn sm", "Complete");
+      doneBtn.onclick = () => openCompleteModal(t);
+      acts.appendChild(doneBtn);
+    }
   }
   card.appendChild(acts);
   return card;
 }
 
-function emptyState(text, sub, actionLabel, onAction) {
-  const d = el("div", "empty");
-  d.appendChild(el("p", null, text));
-  if (sub) d.appendChild(el("p", "muted sm", sub));
-  if (actionLabel && onAction) {
-    const b = el("button", "btn", actionLabel);
-    b.onclick = onAction;
-    d.appendChild(b);
+// ==================== PROPERTIES ====================
+function renderProperties() {
+  const wrap = $("#view-properties");
+  wrap.innerHTML = "";
+
+  const hd = el("div", "card");
+  hd.style.display = "flex";
+  hd.style.justifyContent = "space-between";
+  hd.style.alignItems = "center";
+  hd.appendChild(el("h2", null, "Properties"));
+  if (ME.role === "owner") {
+    const addBtn = el("button", "btn sm", "+ Add Property");
+    addBtn.onclick = () => openPropertyModal();
+    hd.appendChild(addBtn);
   }
-  return d;
+  wrap.appendChild(hd);
+
+  const props = Store.propertiesFor(ME);
+  if (!props.length) {
+    wrap.appendChild(emptyState("No properties yet", ME.role === "owner" ? "Add your first property to get started" : "No properties assigned to you yet", ME.role === "owner" ? "Add Property" : null, ME.role === "owner" ? () => openPropertyModal() : null));
+    return;
+  }
+
+  const list = el("div", "grid");
+  props.forEach(p => {
+    const card = el("div", "card");
+    card.appendChild(el("h3", null, p.name));
+    if (p.address) card.appendChild(el("p", "muted sm", p.address));
+    if (p.description) card.appendChild(el("p", "muted", p.description));
+    if (p.details) {
+      const d = p.details;
+      const bits = [];
+      if (d.rooms) bits.push(`${d.rooms} rooms`);
+      if (d.yearBuilt) bits.push(`Built ${d.yearBuilt}`);
+      if (d.squareFootage) bits.push(`${d.squareFootage.toLocaleString()} sqft`);
+      if (bits.length) card.appendChild(el("p", "muted sm", bits.join(" · ")));
+    }
+    const tasks = Store.tasksFor(p.id);
+    const openTasks = tasks.filter(t => !["completed", "accepted"].includes(t.status));
+    if (openTasks.length) {
+      card.appendChild(el("p", "muted sm", `${openTasks.length} open task${openTasks.length > 1 ? "s" : ""}`));
+    }
+    const acts = el("div", "card-actions");
+    const viewBtn = el("button", "btn sm ghost", "View Details");
+    viewBtn.onclick = () => openPropertyDetailModal(p);
+    acts.appendChild(viewBtn);
+    card.appendChild(acts);
+    list.appendChild(card);
+  });
+  wrap.appendChild(list);
 }
 
-// ==================== TASKS ====================
+// ==================== TASKS (Owner) ====================
 function renderTasks() {
   const wrap = $("#view-tasks");
   wrap.innerHTML = "";
@@ -797,7 +505,7 @@ function renderTasks() {
   hd.style.justifyContent = "space-between";
   hd.style.alignItems = "center";
   hd.appendChild(el("h2", null, "Tasks"));
-  if (ME.role === "owner" && props.length) {
+  if (props.length) {
     const addBtn = el("button", "btn sm", "+ New Task");
     addBtn.onclick = () => openTaskModal();
     hd.appendChild(addBtn);
@@ -820,147 +528,214 @@ function renderTasks() {
   wrap.appendChild(list);
 }
 
-// ==================== MAP ====================
-function renderMap() {
-  const wrap = $("#view-map");
+// ==================== HIRING (Owner) ====================
+function renderHiring() {
+  const wrap = $("#view-hiring");
   wrap.innerHTML = "";
 
-  const hd = el("div", "card");
-  hd.style.display = "flex";
-  hd.style.justifyContent = "space-between";
-  hd.style.alignItems = "center";
-  hd.appendChild(el("h2", null, "Map"));
-  const locBtn = el("button", "btn ghost sm", "📍 My Location");
-  locBtn.onclick = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        pos => { if (map) map.setView([pos.coords.latitude, pos.coords.longitude], 15); },
-        () => toast("Location access denied", "bad")
-      );
-    }
-  };
-  hd.appendChild(locBtn);
-  wrap.appendChild(hd);
+  wrap.appendChild(el("h2", null, "Hiring"));
 
-  const mapDiv = el("div", "map");
-  mapDiv.id = "mapCanvas";
-  wrap.appendChild(mapDiv);
-
-  const legend = el("div", "map-legend");
-  legend.innerHTML = `
-    <span class="lg"><i class="sw" style="background:var(--cyan)"></i>Properties</span>
-    <span class="lg"><i class="sw" style="background:var(--red)"></i>High</span>
-    <span class="lg"><i class="sw" style="background:var(--gold)"></i>Normal</span>
-    <span class="lg"><i class="sw" style="background:var(--green)"></i>Low</span>
-  `;
-  wrap.appendChild(legend);
-
-  // Init map
-  if (typeof L !== "undefined") {
-    if (map) map.remove();
-    map = L.map(mapDiv).setView([34.0522, -118.2437], 12);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19, attribution: '&copy; OpenStreetMap contributors',
-    }).addTo(map);
-
-    const props = Store.propertiesFor(ME);
-    const bounds = [];
-    props.forEach(p => {
-      if (p.lat != null && p.lng != null) {
-        L.marker([p.lat, p.lng]).addTo(map).bindPopup(`<b>${esc(p.name)}</b>`);
-        bounds.push([p.lat, p.lng]);
+  // Current hires
+  const hires = Store.getHiresForOwner(ME.id);
+  const hiresSec = el("div", "card");
+  hiresSec.appendChild(el("h3", null, "Current Hires"));
+  if (!hires.length) {
+    hiresSec.appendChild(el("p", "muted", "No hires yet."));
+  } else {
+    hires.forEach(h => {
+      const worker = Store.user(h.workerId);
+      const prop = Store.property(h.propertyId);
+      const row = el("div", "card");
+      row.style.display = "flex";
+      row.style.alignItems = "center";
+      row.style.gap = "12px";
+      const av = el("span", "avatar", initial(worker?.name || "?"));
+      av.style.background = avatarColor(h.workerId);
+      row.appendChild(av);
+      const info = el("div");
+      info.appendChild(el("b", null, worker?.name || "Unknown"));
+      info.appendChild(el("p", "muted sm", `${prop?.name || "Unknown"} · ${h.status}`));
+      row.appendChild(info);
+      if (h.status === "pending") {
+        const activeBtn = el("button", "btn sm ghost", "Activate");
+        activeBtn.onclick = () => { Store.updateHire(h.id, { status: "active" }); toast("Hire activated", "good"); render(); };
+        row.appendChild(activeBtn);
       }
-      Store.tasksFor(p.id).forEach(t => {
-        if (t.lat == null || t.lng == null) return;
-        const col = t.status === "done" ? "#6b7280" : t.priority === "high" ? "#f87171" : t.priority === "low" ? "#34d399" : "#fbbf24";
-        L.circleMarker([t.lat, t.lng], { radius: 8, color: "#0a0f0d", weight: 2, fillColor: col, fillOpacity: 1 })
-          .addTo(map).bindPopup(`<b>${esc(t.title)}</b><br>${t.status} — ${t.priority}`);
-        bounds.push([t.lat, t.lng]);
-      });
+      hiresSec.appendChild(row);
     });
-    if (bounds.length) map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
-
-    // Click to add task
-    map.on("click", e => {
-      if (ME.role !== "owner") return;
-      openTaskModal(null, e.latlng.lat, e.latlng.lng);
-    });
-  } else {
-    wrap.appendChild(el("p", "muted", "Map library not loaded. Check your internet connection."));
   }
+  wrap.appendChild(hiresSec);
+
+  // Available workers
+  const workers = Store.workers();
+  const availSec = el("div", "card");
+  availSec.appendChild(el("h3", null, "Available Workers"));
+  if (!workers.length) {
+    availSec.appendChild(el("p", "muted", "No workers registered yet."));
+  } else {
+    workers.forEach(w => {
+      const profile = Store.getWorkerProfile(w.id);
+      const row = el("div", "card");
+      row.style.display = "flex";
+      row.style.alignItems = "center";
+      row.style.gap = "12px";
+      const av = el("span", "avatar", initial(w.name));
+      av.style.background = avatarColor(w.id);
+      row.appendChild(av);
+      const info = el("div");
+      info.appendChild(el("b", null, w.name));
+      const bits = [profile?.trade, profile?.location, profile?.rating ? `⭐ ${profile.rating}` : ""].filter(Boolean);
+      if (bits.length) info.appendChild(el("p", "muted sm", bits.join(" · ")));
+      row.appendChild(info);
+      const hireBtn = el("button", "btn sm ghost", "Hire");
+      hireBtn.onclick = () => openHireModal(w);
+      row.appendChild(hireBtn);
+      availSec.appendChild(row);
+    });
+  }
+  wrap.appendChild(availSec);
 }
 
-// ==================== PEOPLE ====================
-function renderPeople() {
-  const wrap = $("#view-people");
+// ==================== MESSAGES ====================
+function renderMessages() {
+  const wrap = $("#view-messages");
   wrap.innerHTML = "";
 
-  wrap.appendChild(el("h2", null, "People"));
+  wrap.appendChild(el("h2", null, "Messages"));
 
-  if (ME.role === "owner") {
-    // Workers
-    const workers = Store.workers();
-    const sec = el("div", "card");
-    sec.appendChild(el("h3", null, "Trade Workers"));
-    if (!workers.length) {
-      sec.appendChild(el("p", "muted", "No workers registered yet."));
-    } else {
-      workers.forEach(w => {
-        const row = el("div", "card");
-        row.style.display = "flex";
-        row.style.alignItems = "center";
-        row.style.gap = "12px";
-        const av = el("span", "avatar", initial(w.name));
-        av.style.background = avatarColor(w.id);
-        row.appendChild(av);
-        row.appendChild(el("b", null, w.name));
-        row.appendChild(el("span", "muted sm", w.email));
-        sec.appendChild(row);
-      });
-    }
-    wrap.appendChild(sec);
-
-    // Crews
-    const crews = Store.groupsFor(ME.id);
-    const crewSec = el("div", "card");
-    crewSec.appendChild(el("h3", null, "Crews"));
-    if (!crews.length) {
-      crewSec.appendChild(el("p", "muted", "No crews yet. Create one to group workers."));
-    } else {
-      crews.forEach(g => {
-        const row = el("div", "card");
-        row.style.display = "flex";
-        row.style.alignItems = "center";
-        row.style.gap = "12px";
-        row.appendChild(el("span", null, g.name));
-        row.appendChild(el("span", "muted sm", `${g.memberIds.length} members`));
-        crewSec.appendChild(row);
-      });
-    }
-    const newCrewBtn = el("button", "btn ghost sm", "+ New Crew");
-    newCrewBtn.onclick = () => openCrewModal();
-    crewSec.appendChild(newCrewBtn);
-    wrap.appendChild(crewSec);
-  } else {
-    // Worker view - show assigned properties
-    const props = Store.propertiesFor(ME);
-    const sec = el("div", "card");
-    sec.appendChild(el("h3", null, "My Properties"));
-    if (!props.length) {
-      sec.appendChild(el("p", "muted", "No properties assigned to you yet."));
-    } else {
-      props.forEach(p => {
-        const row = el("div", "card");
-        row.appendChild(el("b", null, p.name));
-        row.appendChild(el("p", "muted sm", p.address || ""));
-        sec.appendChild(row);
-      });
-    }
-    wrap.appendChild(sec);
+  const msgs = Store.getMessages(ME.id);
+  if (!msgs.length) {
+    wrap.appendChild(emptyState("No messages yet", "Start a conversation with a worker or owner"));
+    return;
   }
+
+  // Group by conversation partner
+  const conversations = new Map();
+  msgs.forEach(m => {
+    const partnerId = m.fromId === ME.id ? m.toId : m.fromId;
+    if (!conversations.has(partnerId)) conversations.set(partnerId, []);
+    conversations.get(partnerId).push(m);
+  });
+
+  const list = el("div", "grid");
+  conversations.forEach((msgs, partnerId) => {
+    const partner = Store.user(partnerId);
+    const card = el("div", "card");
+    card.appendChild(el("h3", null, partner?.name || "Unknown"));
+    const last = msgs[msgs.length - 1];
+    card.appendChild(el("p", "muted sm", last.text.slice(0, 80)));
+    card.appendChild(el("p", "muted sm", relTime(last.createdAt)));
+    const acts = el("div", "card-actions");
+    const viewBtn = el("button", "btn sm ghost", "View");
+    viewBtn.onclick = () => openConversationModal(partnerId);
+    acts.appendChild(viewBtn);
+    card.appendChild(acts);
+    list.appendChild(card);
+  });
+  wrap.appendChild(list);
 }
 
-// ==================== SETTINGS ====================
+// ==================== CREWS (Worker) ====================
+function renderCrews() {
+  const wrap = $("#view-crews");
+  wrap.innerHTML = "";
+
+  wrap.appendChild(el("h2", null, "Crews"));
+
+  const crews = Store.getCrewsForWorker(ME.id);
+  if (!crews.length) {
+    wrap.appendChild(emptyState("No crews yet", "You haven't been added to any crews"));
+    return;
+  }
+
+  const list = el("div", "grid");
+  crews.forEach(c => {
+    const card = el("div", "card");
+    card.appendChild(el("h3", null, c.name));
+    card.appendChild(el("p", "muted sm", `${c.memberIds.length} members`));
+    const owner = Store.user(c.ownerId);
+    if (owner) card.appendChild(el("p", "muted sm", `Owner: ${owner.name}`));
+    list.appendChild(card);
+  });
+  wrap.appendChild(list);
+}
+
+// ==================== PROFILE (Worker) ====================
+function renderProfile() {
+  const wrap = $("#view-profile");
+  wrap.innerHTML = "";
+
+  wrap.appendChild(el("h2", null, "My Profile"));
+
+  const profile = Store.getWorkerProfile(ME.id) || {};
+
+  const card = el("div", "card");
+  card.appendChild(el("h3", null, "Worker Profile"));
+
+  const bioInput = el("textarea");
+  bioInput.value = profile.bio || "";
+  bioInput.rows = 3;
+  bioInput.placeholder = "Tell owners about yourself...";
+  bioInput.style.cssText = "background:var(--bg2);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:10px 12px;width:100%";
+  const bioField = el("label", "field");
+  bioField.appendChild(el("span", null, "Bio"));
+  bioField.appendChild(bioInput);
+  card.appendChild(bioField);
+
+  const skillsInput = el("input");
+  skillsInput.value = (profile.skills || []).join(", ");
+  skillsInput.placeholder = "Plumbing, Electrical, ...";
+  skillsInput.style.cssText = "background:var(--bg2);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:10px 12px;width:100%";
+  const skillsField = el("label", "field");
+  skillsField.appendChild(el("span", null, "Skills (comma separated)"));
+  skillsField.appendChild(skillsInput);
+  card.appendChild(skillsField);
+
+  const tradeInput = el("input");
+  tradeInput.value = profile.trade || "";
+  tradeInput.placeholder = "Plumber, Electrician, ...";
+  tradeInput.style.cssText = "background:var(--bg2);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:10px 12px;width:100%";
+  const tradeField = el("label", "field");
+  tradeField.appendChild(el("span", null, "Trade"));
+  tradeField.appendChild(tradeInput);
+  card.appendChild(tradeField);
+
+  const locInput = el("input");
+  locInput.value = profile.location || "";
+  locInput.placeholder = "City, State";
+  locInput.style.cssText = "background:var(--bg2);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:10px 12px;width:100%";
+  const locField = el("label", "field");
+  locField.appendChild(el("span", null, "Location"));
+  locField.appendChild(locInput);
+  card.appendChild(locField);
+
+  const radiusInput = el("input");
+  radiusInput.type = "number";
+  radiusInput.value = profile.serviceRadius || 25;
+  radiusInput.min = 1;
+  radiusInput.max = 200;
+  radiusInput.style.cssText = "background:var(--bg2);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:10px 12px;width:100%";
+  const radiusField = el("label", "field");
+  radiusField.appendChild(el("span", null, "Service Radius (km)"));
+  radiusField.appendChild(radiusInput);
+  card.appendChild(radiusField);
+
+  const saveBtn = el("button", "btn sm", "Save Profile");
+  saveBtn.onclick = () => {
+    Store.updateWorkerProfile(ME.id, {
+      bio: bioInput.value,
+      skills: skillsInput.value.split(",").map(s => s.trim()).filter(Boolean),
+      trade: tradeInput.value,
+      location: locInput.value,
+      serviceRadius: parseInt(radiusInput.value) || 25,
+    });
+    toast("Profile updated", "good");
+  };
+  card.appendChild(saveBtn);
+  wrap.appendChild(card);
+}
+
+// ==================== SETTINGS (Owner) ====================
 function renderSettings() {
   const wrap = $("#view-settings");
   wrap.innerHTML = "";
@@ -1112,13 +887,14 @@ function openTaskModal(task = null, lat = null, lng = null) {
   dueField.appendChild(dueInput);
   body.appendChild(dueField);
 
-  // Photo
+  // Photo (required for new tasks)
   const photoInput = el("input");
   photoInput.type = "file";
   photoInput.accept = "image/*";
   photoInput.setAttribute("capture", "environment");
+  if (!task) photoInput.required = true;
   const photoField = el("label", "field");
-  photoField.appendChild(el("span", null, "Photo (optional)"));
+  photoField.appendChild(el("span", null, task ? "Photo (optional)" : "Photo (required)"));
   photoField.appendChild(photoInput);
   body.appendChild(photoField);
 
@@ -1146,6 +922,7 @@ function openTaskModal(task = null, lat = null, lng = null) {
   cancelBtn.onclick = () => closeModal(m);
   saveBtn.onclick = () => {
     if (!titleInput.value.trim()) { toast("Please enter a task title", "bad"); return; }
+    if (!task && !photoInput.files.length) { toast("Please attach a photo", "bad"); return; }
     const data = {
       propertyId: propSel.value,
       title: titleInput.value,
@@ -1158,7 +935,22 @@ function openTaskModal(task = null, lat = null, lng = null) {
       Store.updateTask(task.id, data);
       toast("Task updated", "good");
     } else {
+      // Handle photo
+      const file = photoInput.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const photo = Store.addPhoto({ propertyId: propSel.value, uploaderId: ME.id, dataUrl: reader.result, kind: "issue" });
+          Store.addTask({ ...data, createdBy: ME.id, photoId: photo.id });
+          closeModal(m);
+          toast("Task created", "good");
+          render();
+        };
+        reader.readAsDataURL(file);
+        return;
+      }
       Store.addTask({ ...data, createdBy: ME.id });
+      closeModal(m);
       toast("Task created", "good");
     }
     closeModal(m);
@@ -1187,6 +979,43 @@ function openPropertyModal() {
   addrField.appendChild(addrInput);
   body.appendChild(addrField);
 
+  const descInput = el("textarea");
+  descInput.placeholder = "Description";
+  descInput.rows = 2;
+  descInput.style.cssText = "background:var(--bg2);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:10px 12px;width:100%";
+  const descField = el("label", "field");
+  descField.appendChild(el("span", null, "Description"));
+  descField.appendChild(descInput);
+  body.appendChild(descField);
+
+  // Details
+  const roomsInput = el("input");
+  roomsInput.type = "number";
+  roomsInput.placeholder = "Rooms";
+  roomsInput.style.cssText = "background:var(--bg2);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:10px 12px;width:100%";
+  const roomsField = el("label", "field");
+  roomsField.appendChild(el("span", null, "Rooms"));
+  roomsField.appendChild(roomsInput);
+  body.appendChild(roomsField);
+
+  const yearInput = el("input");
+  yearInput.type = "number";
+  yearInput.placeholder = "Year Built";
+  yearInput.style.cssText = "background:var(--bg2);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:10px 12px;width:100%";
+  const yearField = el("label", "field");
+  yearField.appendChild(el("span", null, "Year Built"));
+  yearField.appendChild(yearInput);
+  body.appendChild(yearField);
+
+  const sqftInput = el("input");
+  sqftInput.type = "number";
+  sqftInput.placeholder = "Square Footage";
+  sqftInput.style.cssText = "background:var(--bg2);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:10px 12px;width:100%";
+  const sqftField = el("label", "field");
+  sqftField.appendChild(el("span", null, "Square Footage"));
+  sqftField.appendChild(sqftInput);
+  body.appendChild(sqftField);
+
   const locBtn = el("button", "btn ghost sm", "📍 Use My Location");
   let lat = null, lng = null;
   locBtn.onclick = () => {
@@ -1210,7 +1039,14 @@ function openPropertyModal() {
   cancelBtn.onclick = () => closeModal(m);
   saveBtn.onclick = () => {
     if (!nameInput.value.trim()) { toast("Please enter a property name", "bad"); return; }
-    Store.addProperty({ ownerId: ME.id, name: nameInput.value, address: addrInput.value, lat, lng });
+    Store.addProperty({
+      ownerId: ME.id,
+      name: nameInput.value,
+      address: addrInput.value,
+      description: descInput.value,
+      details: { rooms: parseInt(roomsInput.value) || null, yearBuilt: parseInt(yearInput.value) || null, squareFootage: parseInt(sqftInput.value) || null },
+      lat, lng,
+    });
     closeModal(m);
     toast("Property added", "good");
     render();
@@ -1218,53 +1054,234 @@ function openPropertyModal() {
   openModal(m);
 }
 
-function openCrewModal() {
+function openPropertyDetailModal(p) {
   const body = el("div", "stack");
   body.style.gap = "12px";
 
-  const nameInput = el("input");
-  nameInput.placeholder = "Crew name";
-  nameInput.style.cssText = "background:var(--bg2);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:10px 12px;width:100%";
-  const nameField = el("label", "field");
-  nameField.appendChild(el("span", null, "Crew Name"));
-  nameField.appendChild(nameInput);
-  body.appendChild(nameField);
+  body.appendChild(el("h3", null, p.name));
+  if (p.address) body.appendChild(el("p", "muted", p.address));
+  if (p.description) body.appendChild(el("p", null, p.description));
+  if (p.details) {
+    const d = p.details;
+    const bits = [];
+    if (d.rooms) bits.push(`${d.rooms} rooms`);
+    if (d.yearBuilt) bits.push(`Built ${d.yearBuilt}`);
+    if (d.squareFootage) bits.push(`${d.squareFootage.toLocaleString()} sqft`);
+    if (bits.length) body.appendChild(el("p", "muted", bits.join(" · ")));
+  }
 
-  const workers = Store.workers();
-  const checks = new Map();
-  workers.forEach(w => {
-    const row = el("label");
-    row.style.cssText = "display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--line);border-radius:10px;cursor:pointer";
-    const cb = el("input");
-    cb.type = "checkbox";
-    cb.style.width = "18px";
-    cb.style.height = "18px";
-    checks.set(w.id, cb);
-    row.appendChild(cb);
-    const av = el("span", "avatar sm", initial(w.name));
-    av.style.background = avatarColor(w.id);
-    row.appendChild(av);
-    row.appendChild(el("span", null, w.name));
-    body.appendChild(row);
-  });
+  // Tasks
+  const tasks = Store.tasksFor(p.id);
+  if (tasks.length) {
+    body.appendChild(el("h4", null, "Tasks"));
+    tasks.forEach(t => {
+      const row = el("div", "card");
+      row.style.padding = "10px";
+      row.appendChild(el("b", null, t.title));
+      row.appendChild(el("p", "muted sm", `${t.status} · ${t.priority}`));
+      body.appendChild(row);
+    });
+  }
+
+  // House records
+  const records = Store.getHouseRecords(p.id);
+  if (records.length) {
+    body.appendChild(el("h4", null, "House Records"));
+    records.forEach(r => {
+      const row = el("div", "card");
+      row.style.padding = "10px";
+      row.appendChild(el("b", null, r.title));
+      row.appendChild(el("p", "muted sm", `${r.category} · $${r.cost || 0}`));
+      body.appendChild(row);
+    });
+  }
+
+  const actions = el("div", "modal-actions");
+  const closeBtn = el("button", "btn ghost", "Close");
+  actions.appendChild(closeBtn);
+  body.appendChild(actions);
+
+  const m = modal("Property Details", body);
+  closeBtn.onclick = () => closeModal(m);
+  openModal(m);
+}
+
+function openRequestModal(task) {
+  const body = el("div", "stack");
+  body.style.gap = "12px";
+
+  body.appendChild(el("p", null, `Request to work on: ${task.title}`));
+
+  const msgInput = el("textarea");
+  msgInput.placeholder = "Message to owner...";
+  msgInput.rows = 3;
+  msgInput.style.cssText = "background:var(--bg2);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:10px 12px;width:100%";
+  const msgField = el("label", "field");
+  msgField.appendChild(el("span", null, "Message"));
+  msgField.appendChild(msgInput);
+  body.appendChild(msgField);
+
+  const priceInput = el("input");
+  priceInput.type = "number";
+  priceInput.placeholder = "Your price ($)";
+  priceInput.style.cssText = "background:var(--bg2);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:10px 12px;width:100%";
+  const priceField = el("label", "field");
+  priceField.appendChild(el("span", null, "Price"));
+  priceField.appendChild(priceInput);
+  body.appendChild(priceField);
 
   const actions = el("div", "modal-actions");
   const cancelBtn = el("button", "btn ghost", "Cancel");
-  const saveBtn = el("button", "btn", "Create Crew");
+  const sendBtn = el("button", "btn", "Send Request");
   actions.appendChild(cancelBtn);
-  actions.appendChild(saveBtn);
+  actions.appendChild(sendBtn);
   body.appendChild(actions);
 
-  const m = modal("New Crew", body);
+  const m = modal("Request Task", body);
   cancelBtn.onclick = () => closeModal(m);
-  saveBtn.onclick = () => {
-    if (!nameInput.value.trim()) { toast("Please enter a crew name", "bad"); return; }
-    const ids = [];
-    checks.forEach((cb, id) => { if (cb.checked) ids.push(id); });
-    Store.addGroup({ ownerId: ME.id, name: nameInput.value, memberIds: ids });
+  sendBtn.onclick = () => {
+    try {
+      Store.requestTask(task.id, ME.id, msgInput.value, parseFloat(priceInput.value) || null);
+      closeModal(m);
+      toast("Request sent", "good");
+      render();
+    } catch (e) {
+      toast(e.message, "bad");
+    }
+  };
+  openModal(m);
+}
+
+function openCompleteModal(task) {
+  const body = el("div", "stack");
+  body.style.gap = "12px";
+
+  body.appendChild(el("p", null, `Complete task: ${task.title}`));
+
+  const photoInput = el("input");
+  photoInput.type = "file";
+  photoInput.accept = "image/*";
+  photoInput.setAttribute("capture", "environment");
+  photoInput.required = true;
+  const photoField = el("label", "field");
+  photoField.appendChild(el("span", null, "Completion Photo (required)"));
+  photoField.appendChild(photoInput);
+  body.appendChild(photoField);
+
+  const actions = el("div", "modal-actions");
+  const cancelBtn = el("button", "btn ghost", "Cancel");
+  const doneBtn = el("button", "btn", "Mark Complete");
+  actions.appendChild(cancelBtn);
+  actions.appendChild(doneBtn);
+  body.appendChild(actions);
+
+  const m = modal("Complete Task", body);
+  cancelBtn.onclick = () => closeModal(m);
+  doneBtn.onclick = () => {
+    if (!photoInput.files.length) { toast("Please attach a completion photo", "bad"); return; }
+    const file = photoInput.files[0];
+    const reader = new FileReader();
+    reader.onload = () => {
+      const photo = Store.addPhoto({ propertyId: task.propertyId, taskId: task.id, uploaderId: ME.id, dataUrl: reader.result, kind: "completion" });
+      Store.setTaskStatus(task.id, "completed", ME.id);
+      Store.updateTask(task.id, { completionPhotoId: photo.id });
+      closeModal(m);
+      toast("Task completed!", "good");
+      render();
+    };
+    reader.readAsDataURL(file);
+  };
+  openModal(m);
+}
+
+function openHireModal(worker) {
+  const props = Store.propertiesFor(ME);
+  if (!props.length) { toast("Add a property first", "bad"); return; }
+
+  const body = el("div", "stack");
+  body.style.gap = "12px";
+
+  body.appendChild(el("p", null, `Hire ${worker.name}`));
+
+  const propSel = el("select");
+  propSel.style.cssText = "background:var(--bg2);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:10px 12px;width:100%";
+  props.forEach(p => {
+    const o = el("option", null, p.name);
+    o.value = p.id;
+    propSel.appendChild(o);
+  });
+  const propField = el("label", "field");
+  propField.appendChild(el("span", null, "Property"));
+  propField.appendChild(propSel);
+  body.appendChild(propField);
+
+  const actions = el("div", "modal-actions");
+  const cancelBtn = el("button", "btn ghost", "Cancel");
+  const hireBtn = el("button", "btn", "Hire");
+  actions.appendChild(cancelBtn);
+  actions.appendChild(hireBtn);
+  body.appendChild(actions);
+
+  const m = modal("Hire Worker", body);
+  cancelBtn.onclick = () => closeModal(m);
+  hireBtn.onclick = () => {
+    try {
+      Store.hireWorker(ME.id, worker.id, propSel.value);
+      closeModal(m);
+      toast("Worker hired", "good");
+      render();
+    } catch (e) {
+      toast(e.message, "bad");
+    }
+  };
+  openModal(m);
+}
+
+function openConversationModal(partnerId) {
+  const partner = Store.user(partnerId);
+  const msgs = Store.getConversation(ME.id, partnerId);
+
+  const body = el("div", "stack");
+  body.style.gap = "12px";
+
+  body.appendChild(el("h3", null, `Conversation with ${partner?.name || "Unknown"}`));
+
+  const msgList = el("div");
+  msgList.style.cssText = "max-height:300px;overflow-y:auto;display:grid;gap:8px";
+  msgs.forEach(m => {
+    const row = el("div");
+    row.style.cssText = `padding:8px 12px;border-radius:10px;max-width:80%;${m.fromId === ME.id ? "background:var(--panel3);justify-self:end;" : "background:var(--bg2);"}`;
+    row.appendChild(el("p", null, m.text));
+    row.appendChild(el("p", "muted sm", relTime(m.createdAt)));
+    msgList.appendChild(row);
+    if (!m.read && m.toId === ME.id) Store.markMessageRead(m.id);
+  });
+  body.appendChild(msgList);
+
+  const input = el("input");
+  input.placeholder = "Type a message...";
+  input.style.cssText = "background:var(--bg2);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:10px 12px;width:100%";
+  body.appendChild(input);
+
+  const actions = el("div", "modal-actions");
+  const closeBtn = el("button", "btn ghost", "Close");
+  const sendBtn = el("button", "btn", "Send");
+  actions.appendChild(closeBtn);
+  actions.appendChild(sendBtn);
+  body.appendChild(actions);
+
+  const m = modal("Messages", body);
+  closeBtn.onclick = () => closeModal(m);
+  sendBtn.onclick = () => {
+    if (!input.value.trim()) return;
+    Store.sendMessage(ME.id, partnerId, input.value);
+    input.value = "";
+    // Refresh
     closeModal(m);
-    toast("Crew created", "good");
-    render();
+    openConversationModal(partnerId);
+  };
+  input.onkeydown = (e) => {
+    if (e.key === "Enter") sendBtn.click();
   };
   openModal(m);
 }
@@ -1273,9 +1290,10 @@ function openCrewModal() {
 const TUTORIAL_STEPS = [
   { title: "Welcome to Habitat! 🌿", text: "Let's take a quick tour. This will only take a minute." },
   { title: "Dashboard", text: "This is your home. See all your tasks, properties, and progress at a glance." },
-  { title: "Tasks", text: "Create tasks with photos and locations. Assign them to workers or crews." },
-  { title: "Map", text: "See everything on a map. Tap anywhere to add a new task right where it needs to happen." },
-  { title: "People", text: "Manage your workers and crews. Assign whole crews to properties at once." },
+  { title: "Properties", text: "Manage your properties. Add details, photos, and view task history." },
+  { title: "Tasks", text: "Create tasks with photos and locations. Workers can request to work on them." },
+  { title: "Hiring", text: "Hire trade workers for your properties. Manage your team." },
+  { title: "Messages", text: "Chat with workers and owners. Negotiate pricing and scheduling." },
   { title: "Settings", text: "Update your profile, change your password, or replay this tutorial anytime." },
   { title: "You're all set! 🎉", text: "That's the basics. You can always access this tutorial again from Settings. Enjoy using Habitat!" },
 ];
