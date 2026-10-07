@@ -1,8 +1,33 @@
 /* Habitat — Store (data layer) */
 "use strict";
 
-const DB_KEY = "habitat.db.v2";
-const SESSION_KEY = "habitat.session.v2";
+const DB_KEY = "habitat.db.v1";
+const SESSION_KEY = "habitat.session.v1";
+const API_URL = window.HABITAT_API_URL || "";
+let AUTH_TOKEN = null;
+
+async function api(path, opts = {}) {
+  if (!API_URL) return null;
+  try {
+    const res = await fetch(API_URL + path, {
+      ...opts,
+      headers: {
+        "Content-Type": "application/json",
+        ...(AUTH_TOKEN ? { Authorization: "Bearer " + AUTH_TOKEN } : {}),
+        ...(opts.headers || {}),
+      },
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+    return await res.json();
+  } catch (e) {
+    console.warn("API call failed:", path, e);
+    return null;
+  }
+}
+
+async function apiPost(path, data) { return api(path, { method: "POST", body: JSON.stringify(data) }); }
+async function apiPut(path, data) { return api(path, { method: "PUT", body: JSON.stringify(data) }); }
+async function apiDelete(path) { return api(path, { method: "DELETE" }); }
 
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -110,6 +135,18 @@ const Store = {
     if (!name || !email || !password) throw new Error("Please fill in all fields.");
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error("That email doesn't look right.");
     if (password.length < 8) throw new Error("Password must be 8+ characters.");
+    
+    // Try API first
+    if (API_URL) {
+      const res = await apiPost("/api/auth/signup", { name, email, password, role });
+      if (res) {
+        AUTH_TOKEN = res.token;
+        localStorage.setItem("habitat.token", res.token);
+        return res.user;
+      }
+    }
+    
+    // Fallback to localStorage
     if (this.idx.usersByEmail.has(email)) throw new Error("That email is already registered.");
     const user = {
       id: uid(), name, email,
@@ -128,6 +165,19 @@ const Store = {
 
   async login(email, password) {
     email = (email || "").trim().toLowerCase();
+    
+    // Try API first
+    if (API_URL) {
+      const res = await apiPost("/api/auth/login", { email, password });
+      if (res) {
+        AUTH_TOKEN = res.token;
+        localStorage.setItem("habitat.token", res.token);
+        return res.user;
+      }
+      throw new Error("Invalid email or password");
+    }
+    
+    // Fallback to localStorage
     const u = this.idx.usersByEmail.get(email);
     if (!u) throw new Error("No account with that email.");
     if (!u.active) throw new Error("This account has been disabled.");
@@ -140,6 +190,14 @@ const Store = {
 
   async resetPassword(email, next) {
     email = (email || "").trim().toLowerCase();
+    
+    // Try API first
+    if (API_URL) {
+      const res = await apiPost("/api/auth/reset", { email, password: next });
+      if (res) return { success: true };
+    }
+    
+    // Fallback to localStorage
     const u = this.idx.usersByEmail.get(email);
     if (!u) throw new Error("No account with that email.");
     if (!next || next.length < 8) throw new Error("Password must be 8+ characters.");
@@ -147,6 +205,17 @@ const Store = {
     this.log(u.id, "account.password_reset");
     this.save();
     return this.publicUser(u);
+  },
+  
+  setToken(token) {
+    AUTH_TOKEN = token;
+    if (token) localStorage.setItem("habitat.token", token);
+    else localStorage.removeItem("habitat.token");
+  },
+  
+  getToken() {
+    if (AUTH_TOKEN) return AUTH_TOKEN;
+    try { return localStorage.getItem("habitat.token"); } catch { return null; }
   },
 
   publicUser(u) {
