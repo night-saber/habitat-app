@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Habitat — Property, organised</title>
+<meta name="description" content="Habitat connects property owners and trade workers: photo tasks, live map, and automatic translation.">
+<meta name="theme-color" content="#0a1310">
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/icon.svg">
+<link rel="manifest" href="manifest.json">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- ==================== LANDING PAGE ==================== -->
+<div id="landing" class="landing">
+  <nav class="landing-nav">
+    <div class="landing-brand">
+      <span class="landing-logo">🌿</span>
+      <span class="landing-name">Habitat</span>
+    </div>
+    <div class="landing-nav-actions">
+      <button class="btn ghost sm" id="navLoginBtn">Log in</button>
+      <button class="btn sm" id="navSignupBtn">Get Started</button>
+    </div>
+  </nav>
+
+  <header class="landing-hero">
+    <div class="landing-hero-text">
+      <h1>Property, organised.</h1>
+      <p>Connect property owners and trade workers. Photo tasks, live map, crews, and automatic translation — all in one place.</p>
+      <div class="landing-cta">
+        <button class="btn lg" id="heroGetStartedBtn">Get Started Free</button>
+        <button class="btn ghost lg" id="heroDemoBtn">▶ Try Demo</button>
+      </div>
+      <p class="landing-trust">No server · No tracking · Your data stays in your browser</p>
+    </div>
+    <div class="landing-hero-visual">
+      <div class="preview-card">
+        <div class="preview-header">
+          <span class="preview-dot"></span>
+          <span class="preview-dot"></span>
+          <span class="preview-dot"></span>
+        </div>
+        <div class="preview-stats">
+          <div class="preview-stat"><b>12</b><span>Properties</span></div>
+          <div class="preview-stat"><b>5</b><span>Open Tasks</span></div>
+          <div class="preview-stat"><b>8</b><span>Completed</span></div>
+        </div>
+        <div class="preview-tasks">
+          <div class="preview-task"><span class="task-dot high"></span>Fix kitchen faucet</div>
+          <div class="preview-task"><span class="task-dot normal"></span>Paint living room</div>
+          <div class="preview-task"><span class="task-dot low"></span>Trim hedges</div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <section class="landing-features">
+    <h2>Everything you need to manage your property</h2>
+    <div class="features-grid">
+      <div class="feature-card">
+        <span class="feature-icon">📸</span>
+        <h3>Photo Tasks</h3>
+        <p>Take a photo, describe what needs doing, pin it to the map. Workers see exactly what you want.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">🗺️</span>
+        <h3>Live Map</h3>
+        <p>See every task and property on a map. Tap to add new tasks right where they need to happen.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">🌐</span>
+        <h3>Auto-Translation</h3>
+        <p>65+ languages supported. Write in your language, workers read in theirs. Automatic.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">👷</span>
+        <h3>Trade Workers</h3>
+        <p>Plumbing, electrical, HVAC, roofing, landscaping — assign tasks to the right trade.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">📱</span>
+        <h3>Mobile Ready</h3>
+        <p>Install as an app on your phone. Works offline. Camera integration for photos.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">🔒</span>
+        <h3>Private & Secure</h3>
+        <p>Your data stays in your browser. No server, no tracking, no third parties.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="landing-how">
+    <h2>Get started in seconds</h2>
+    <div class="how-steps">
+      <div class="how-step">
+        <span class="how-num">1</span>
+        <h3>Create an account</h3>
+        <p>Sign up as a property owner or trade worker. Takes 30 seconds.</p>
+      </div>
+      <div class="how-step">
+        <span class="how-num">2</span>
+        <h3>Add your property</h3>
+        <p>Pin your property on the map. Add photos and details.</p>
+      </div>
+      <div class="how-step">
+        <span class="how-num">3</span>
+        <h3>Post tasks</h3>
+        <p>Take a photo, describe what needs done, assign to a worker.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer class="landing-footer">
+    <p>Habitat — Property, organised. Your data stays in your browser.</p>
+  </footer>
+</div>
+
+<!-- ==================== AUTH ==================== -->
+<div id="auth" class="auth-wrap" hidden>
+  <div class="auth-card">
+    <div class="brand-row">
+      <span class="logo">🌿</span>
+      <div>
+        <h1>Habitat</h1>
+        <p class="tagline">Property, organised.</p>
+      </div>
+    </div>
+    <div id="authError" class="error" hidden></div>
+
+    <!-- Login -->
+    <form id="loginForm" class="stack">
+      <label class="field">
+        <span>Email</span>
+        <input type="email" name="email" autocomplete="email" required>
+      </label>
+      <label class="field">
+        <span>Password</span>
+        <input type="password" name="password" autocomplete="current-password" required>
+      </label>
+      <button class="btn wide" type="submit">Log in</button>
+      <p class="swap">
+        <button type="button" class="link" id="toSignup">Create account</button>
+        <span>·</span>
+        <button type="button" class="link" id="toReset">Forgot password?</button>
+      </p>
+    </form>
+
+    <!-- Signup -->
+    <form id="signupForm" class="stack" hidden>
+      <label class="field">
+        <span>Full name</span>
+        <input type="text" name="name" autocomplete="name" required>
+      </label>
+      <label class="field">
+        <span>Email</span>
+        <input type="email" name="email" autocomplete="email" required>
+      </label>
+      <label class="field">
+        <span>Password</span>
+        <input type="password" name="password" autocomplete="new-password" minlength="8" required>
+        <small>8+ characters</small>
+      </label>
+      <label class="field">
+        <span>I am a</span>
+        <select name="role" required>
+          <option value="owner">Property owner</option>
+          <option value="worker">Trade worker</option>
+        </select>
+      </label>
+      <button class="btn wide" type="submit">Create account</button>
+      <p class="swap">
+        <button type="button" class="link" id="toLogin">Log in</button>
+      </p>
+    </form>
+
+    <!-- Reset -->
+    <form id="resetForm" class="stack" hidden>
+      <h2>Reset password</h2>
+      <label class="field">
+        <span>Email</span>
+        <input type="email" name="email" autocomplete="email" required>
+      </label>
+      <label class="field">
+        <span>New password</span>
+        <input type="password" name="next" autocomplete="new-password" minlength="8" required>
+      </label>
+      <label class="field">
+        <span>Confirm password</span>
+        <input type="password" name="confirm" autocomplete="new-password" minlength="8" required>
+      </label>
+      <button class="btn wide" type="submit">Reset password</button>
+      <p class="swap">
+        <button type="button" class="link" id="toLogin2">Log in</button>
+      </p>
+    </form>
+  </div>
+</div>
+
+<!-- ==================== APP ==================== -->
+<div id="app" hidden>
+  <header class="topbar">
+    <div class="top-left">
+      <span class="logo sm">🌿</span>
+      <strong>Habitat</strong>
+    </div>
+    <div class="top-right">
+      <div class="who">
+        <span id="avatar" class="avatar">?</span>
+        <div class="who-text">
+          <b id="whoName">—</b>
+          <span id="whoRole" class="muted sm">—</span>
+        </div>
+      </div>
+      <button class="btn ghost sm" id="logoutBtn">Log out</button>
+    </div>
+  </header>
+
+  <nav class="tabs" id="tabs"></nav>
+
+  <main class="main">
+    <div id="view-dashboard" class="view"></div>
+    <div id="view-tasks" class="view" hidden></div>
+    <div id="view-map" class="view" hidden></div>
+    <div id="view-people" class="view" hidden></div>
+    <div id="view-settings" class="view" hidden></div>
+  </main>
+
+  <!-- Mobile bottom nav -->
+  <nav class="bottom-nav" id="bottomNav">
+    <button class="bottom-nav-btn active" data-view="dashboard">📊<span>Home</span></button>
+    <button class="bottom-nav-btn" data-view="tasks">📋<span>Tasks</span></button>
+    <button class="bottom-nav-btn" data-view="map">🗺️<span>Map</span></button>
+    <button class="bottom-nav-btn" data-view="people">👷<span>People</span></button>
+    <button class="bottom-nav-btn" data-view="settings">⚙️<span>Settings</span></button>
+  </nav>
+</div>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    });
+  }
+</script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
