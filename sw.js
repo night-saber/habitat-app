@@ -1,7 +1,7 @@
 /* Habitat — service worker for offline support */
 "use strict";
 
-const CACHE_NAME = "habitat-v2";
+const CACHE_NAME = "habitat-v3";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -19,6 +19,10 @@ self.addEventListener("install", (e) => {
     caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL))
   );
   self.skipWaiting();
+});
+
+self.addEventListener("message", (e) => {
+  if (e.data && e.data.type === "SKIP_WAITING") self.skipWaiting();
 });
 
 self.addEventListener("activate", (e) => {

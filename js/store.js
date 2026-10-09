@@ -72,6 +72,7 @@ function defaultDb() {
     messages: [],
     hires: [],
     crews: [],
+    meshes: [],
     activity: [],
   };
 }
@@ -136,6 +137,7 @@ const Store = {
       messages: byId(this.db.messages),
       hires: byId(this.db.hires),
       crews: byId(this.db.crews),
+      meshes: byId(this.db.meshes),
       propsByOwner: groupBy(this.db.properties, "ownerId"),
       tasksByProperty: groupBy(this.db.tasks, "propertyId"),
       photosByProperty: groupBy(this.db.photos, "propertyId"),
@@ -147,6 +149,7 @@ const Store = {
       hiresByOwner: groupBy(this.db.hires, "ownerId"),
       hiresByWorker: groupBy(this.db.hires, "workerId"),
       crewsByOwner: groupBy(this.db.crews, "ownerId"),
+      meshesByProperty: groupBy(this.db.meshes, "propertyId"),
       crewsByMember,
     };
   },
@@ -344,6 +347,7 @@ const Store = {
       tasks: this.db.tasks,
       houseRecords: this.db.houseRecords,
       crews: this.db.crews,
+      meshes: this.db.meshes,
       hires: this.db.hires,
       messages: this.db.messages,
       workerProfiles: this.db.workerProfiles,
@@ -391,6 +395,11 @@ const Store = {
     if (Array.isArray(data.hires)) {
       for (const h of data.hires) {
         if (!this.idx.hires.has(h.id)) this.db.hires.push(h);
+      }
+    }
+    if (Array.isArray(data.meshes)) {
+      for (const m of data.meshes) {
+        if (!this.idx.meshes.has(m.id)) this.db.meshes.push(m);
       }
     }
     if (Array.isArray(data.messages)) {
@@ -900,6 +909,52 @@ const Store = {
   /** Crews this worker is a member of. */
   crewsOf(workerId) {
     return this.getCrewsForWorker(workerId);
+  },
+
+  // ==================== 3D MESHES ====================
+  /**
+   * A mesh records a property's makeup: a coloured point cloud plus markers
+   * pinned onto it (light switches, shutoffs, fixtures) describing what each
+   * one is and what it does.
+   */
+  addMesh({ userId, propertyId, name, points, markers, mode }) {
+    const mesh = {
+      id: uid(),
+      userId,
+      propertyId,
+      name: (name || "Mesh").trim(),
+      mode: mode || "indoor",
+      points: points || [],
+      markers: markers || [],
+      createdAt: new Date().toISOString(),
+    };
+    this.db.meshes.push(mesh);
+    this.log(userId, "mesh.created");
+    this.reindex();
+    this.save();
+    return mesh;
+  },
+
+  mesh(id) { return this.idx.meshes.get(id) || null; },
+
+  meshesFor(propertyId) { return this.idx.meshesByProperty.get(propertyId) || []; },
+
+  deleteMesh(id) {
+    const m = this.idx.meshes.get(id);
+    if (!m) return;
+    this.db.meshes = this.db.meshes.filter(x => x.id !== id);
+    this.log(m.userId, "mesh.deleted");
+    this.reindex();
+    this.save();
+  },
+
+  /** Every marker across a property's meshes, for the property info view. */
+  markersFor(propertyId) {
+    const out = [];
+    for (const mesh of this.meshesFor(propertyId)) {
+      for (const mk of (mesh.markers || [])) out.push({ ...mk, meshId: mesh.id, meshName: mesh.name });
+    }
+    return out;
   },
 
   // ==================== MESSAGING RULES ====================

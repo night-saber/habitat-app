@@ -10,6 +10,14 @@
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="assets/icon.svg">
 <link rel="manifest" href="manifest.json">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="css/style.css">
 </head>
@@ -118,6 +126,7 @@
 
   <footer class="landing-footer">
     <p>Habitat — Property, organised. Your data stays in your browser.</p>
+    <p class="build-line">Version <b id="landingVersion">v…</b></p>
   </footer>
 </div>
 
@@ -226,6 +235,7 @@
           <span id="whoRole" class="muted sm">—</span>
         </div>
       </div>
+      <span class="build-badge" id="buildBadge" title="Deployed build — if this number is not what you expect, reload">v…</span>
       <button class="btn ghost sm" id="logoutBtn">Log out</button>
     </div>
   </header>
@@ -237,6 +247,7 @@
     <div id="view-properties" class="view" hidden></div>
     <div id="view-tasks" class="view" hidden></div>
     <div id="view-people" class="view" hidden></div>
+    <div id="view-mesh" class="view" hidden></div>
     <div id="view-map" class="view" hidden></div>
     <div id="view-profile" class="view" hidden></div>
     <div id="view-settings" class="view" hidden></div>
@@ -248,6 +259,7 @@
     <button class="bottom-nav-btn" data-view="properties">🏠<span>Properties</span></button>
     <button class="bottom-nav-btn" data-view="tasks">📋<span>Tasks</span></button>
     <button class="bottom-nav-btn" data-view="people">👷<span>People</span></button>
+    <button class="bottom-nav-btn" data-view="mesh">🧊<span>3D Mesh</span></button>
     <button class="bottom-nav-btn" data-view="map">🗺️<span>Map</span></button>
     <button class="bottom-nav-btn" data-view="profile">👤<span>Profile</span></button>
     <button class="bottom-nav-btn" data-view="settings">⚙️<span>Settings</span></button>
@@ -264,5 +276,9 @@
   }
 </script>
 <script type="module" src="js/app.js"></script>
+<div id="updateBanner" class="update-banner" hidden>
+  <span>A new version of Habitat is available.</span>
+  <button class="btn sm" id="updateNow">Update now</button>
+</div>
 </body>
 </html>

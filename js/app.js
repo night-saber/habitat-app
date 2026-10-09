@@ -2,11 +2,14 @@
 "use strict";
 
 import { Store, uid, sha256, DB_KEY, SESSION_KEY } from "./store.js";
+import { VERSION, BUILD, VERSION_LABEL } from "./version.js";
+import { createMeshViewer } from "./mesh.js";
 
 // ==================== STATE ====================
 let ME = null;
 let view = "dashboard";
 let map = null;
+let meshViewer = null;
 
 // ==================== HELPERS ====================
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -102,6 +105,8 @@ function statusPill(status) {
 // ==================== BOOT ====================
 function boot() {
   try {
+    stampVersion();
+    watchForUpdates();
     Store.load();
     const sid = Store.session();
     if (sid) {
@@ -125,6 +130,7 @@ function showLanding() {
   $("#auth").hidden = true;
   $("#landing").hidden = false;
   wireLanding();
+  stampVersion();
 }
 
 function wireLanding() {
@@ -322,8 +328,8 @@ function buildNav() {
   const nav = $("#tabs");
   nav.innerHTML = "";
   // Universal tab structure for both roles
-  const tabs = ["dashboard", "properties", "tasks", "people", "map", "profile", "settings"];
-  const labels = { dashboard: "Dashboard", properties: "Properties", tasks: "Tasks", people: "People", map: "Map", profile: "Profile", settings: "Settings" };
+  const tabs = ["dashboard", "properties", "tasks", "people", "mesh", "map", "profile", "settings"];
+  const labels = { dashboard: "Dashboard", properties: "Properties", tasks: "Tasks", people: "People", mesh: "3D Mesh", map: "Map", profile: "Profile", settings: "Settings" };
   tabs.forEach(v => {
     const b = el("button", "navbtn", labels[v]);
     b.dataset.view = v;
@@ -334,8 +340,8 @@ function buildNav() {
   // Bottom nav
   const bn = $("#bottomNav");
   bn.innerHTML = "";
-  const icons = { dashboard: "📊", properties: "🏠", tasks: "📋", people: "👷", map: "🗺️", profile: "👤", settings: "⚙️" };
-  const blabels = { dashboard: "Home", properties: "Properties", tasks: "Tasks", people: "People", map: "Map", profile: "Profile", settings: "Settings" };
+  const icons = { dashboard: "📊", properties: "🏠", tasks: "📋", people: "👷", mesh: "🧊", map: "🗺️", profile: "👤", settings: "⚙️" };
+  const blabels = { dashboard: "Home", properties: "Properties", tasks: "Tasks", people: "People", mesh: "3D Mesh", map: "Map", profile: "Profile", settings: "Settings" };
   tabs.forEach(v => {
     const b = el("button", "bottom-nav-btn");
     b.dataset.view = v;
@@ -360,6 +366,7 @@ function render() {
   else if (view === "properties") renderProperties();
   else if (view === "tasks") renderTasks();
   else if (view === "people") renderPeople();
+  else if (view === "mesh") renderMesh();
   else if (view === "map") renderMap();
   else if (view === "profile") renderProfile();
   else if (view === "settings") renderSettings();
@@ -892,6 +899,66 @@ function jobRow(t) {
   row.appendChild(main);
   row.appendChild(statusPill(t.status));
   return row;
+}
+
+// ==================== 3D MESH (Both roles) ====================
+function renderMesh() {
+  const wrap = $("#view-mesh");
+  if (meshViewer) return;                 // keep the WebGL context alive
+  meshViewer = createMeshViewer(wrap, { me: ME });
+}
+
+// ==================== BUILD / VERSION ====================
+/**
+ * Stamp the running build into the header and the landing page, and offer a
+ * reload as soon as a newer service worker takes over. This is how you tell
+ * whether the site you are looking at is actually the new deploy.
+ */
+function stampVersion() {
+  const badge = $("#buildBadge");
+  if (badge) {
+    badge.textContent = VERSION_LABEL;
+    badge.title = `Habitat ${VERSION} (build ${BUILD}) — if this is not the version you deployed, reload the page`;
+  }
+  const landing = $("#landingVersion");
+  if (landing) landing.textContent = VERSION_LABEL;
+}
+
+function watchForUpdates() {
+  if (!("serviceWorker" in navigator)) return;
+  navigator.serviceWorker.ready.then((reg) => {
+    // a worker is already waiting (a deploy landed while this tab was open)
+    if (reg.waiting) showUpdateBanner();
+    reg.addEventListener("updatefound", () => {
+      const sw = reg.installing;
+      if (!sw) return;
+      sw.addEventListener("statechange", () => {
+        if (sw.state === "installed" && navigator.serviceWorker.controller) showUpdateBanner();
+      });
+    });
+  });
+  // when the new worker takes control, reload once to pick up the new files
+  let reloading = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (reloading) return;
+    reloading = true;
+    window.location.reload();
+  });
+}
+
+function showUpdateBanner() {
+  const b = $("#updateBanner");
+  if (!b || !b.hidden) return;
+  b.hidden = false;
+  const btn = $("#updateNow");
+  if (btn) {
+    btn.onclick = () => {
+      navigator.serviceWorker.getRegistration().then((reg) => {
+        if (reg && reg.waiting) reg.waiting.postMessage({ type: "SKIP_WAITING" });
+        else window.location.reload();
+      });
+    };
+  }
 }
 
 // ==================== MAP (Both roles) ====================

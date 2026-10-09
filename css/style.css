@@ -417,3 +417,75 @@ h1, h2, h3, h4 { letter-spacing: -.02em; line-height: 1.2; }
 .assign-row:hover { border-color: var(--green); }
 
 .pill.unread { background: var(--green); color: #06231a; font-weight: 700; border-color: var(--green); }
+
+/* ------------------------------------------------- build / version badge */
+.build-badge {
+  font-size: 12px; font-weight: 700; letter-spacing: .02em;
+  padding: 4px 10px; border-radius: 999px;
+  background: var(--panel3); border: 1px solid var(--line2); color: var(--green);
+  white-space: nowrap;
+}
+.build-line { font-size: 12px; color: var(--dim); margin-top: 4px; }
+.build-line b { color: var(--green); }
+
+/* update-available prompt */
+.update-banner {
+  position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+  z-index: 9000; display: flex; gap: 12px; align-items: center;
+  padding: 10px 14px; border-radius: 999px;
+  background: var(--panel2); border: 1px solid var(--green);
+  box-shadow: var(--shadow); font-size: 14px;
+}
+
+/* ------------------------------------------------------- 3D mesh view */
+.mesh-controls {
+  display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin: 12px 0;
+}
+.mesh-main { display: grid; grid-template-columns: minmax(200px, 1fr) minmax(280px, 2fr); gap: 12px; }
+@media (max-width: 760px) { .mesh-main { grid-template-columns: 1fr; } }
+
+.mesh-cam-panel, .mesh-view-panel {
+  position: relative; border-radius: var(--radius); overflow: hidden;
+  border: 1px solid var(--line); background: var(--panel2); min-height: 240px;
+}
+.mesh-video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.mesh-cam-placeholder {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  background: var(--panel); color: var(--muted);
+}
+.mesh-status {
+  position: absolute; left: 8px; bottom: 8px; right: 8px;
+  font-size: 12px; color: var(--cyan); text-shadow: 0 1px 4px #000;
+}
+.mesh-canvas { width: 100%; height: 320px; display: block; }
+.mesh-overlay {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  background: rgba(8,17,14,.72); text-align: center; padding: 16px;
+}
+.mesh-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+
+.marker-kinds { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0 12px; }
+.marker-kind {
+  display: flex; gap: 6px; align-items: center;
+  padding: 6px 10px; border-radius: 999px; font-size: 13px;
+  background: var(--panel2); border: 1px solid var(--line); color: var(--text);
+}
+.marker-kind:hover { border-color: var(--line2); }
+.marker-kind.active { border-color: var(--green); background: var(--panel3); font-weight: 700; }
+
+.marker-list { display: flex; flex-direction: column; gap: 8px; }
+.marker-row {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 10px 12px; border-radius: var(--radius);
+  background: var(--panel2); border: 1px solid var(--line);
+}
+.marker-dot { width: 12px; height: 12px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }
+.marker-info { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+
+.mesh-saved-list { display: flex; flex-direction: column; gap: 8px; }
+.mesh-saved-row {
+  display: flex; gap: 12px; align-items: center; justify-content: space-between;
+  padding: 10px 12px; border-radius: var(--radius);
+  background: var(--panel2); border: 1px solid var(--line);
+}
+.mesh-saved-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
