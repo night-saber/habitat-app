@@ -509,7 +509,7 @@ const Store = {
   },
 
   // ==================== TASKS ====================
-  addTask({ propertyId, createdBy, title, description, lat, lng, priority, assigneeId, dueDate, photoId }) {
+  addTask({ propertyId, createdBy, title, description, lat, lng, priority, assigneeId, dueDate, photoId, category }) {
     const t = {
       id: uid(), propertyId, createdBy,
       title: (title || "Task").trim(), description: description || "",
@@ -517,6 +517,7 @@ const Store = {
       priority: priority || "normal", status: "open",
       assigneeId: assigneeId || null, dueDate: dueDate || null,
       photoId: photoId || null, completionPhotoId: null,
+      category: category || null,
       requestedBy: null, acceptedBy: null, price: null,
       createdAt: new Date().toISOString(), completedAt: null, completedBy: null,
     };
@@ -835,13 +836,14 @@ const Store = {
     return { total: 0, done: 0, active: 0, trades: [], firstJob: null, lastJob: null };
   },
 
-  /** Which categories of work this worker has done, most frequent first. */
+  /** Which types of work this worker has done, most frequent first. */
   jobStats(workerId, tasks) {
     if (!tasks) tasks = this.db.tasks.filter(t => t.assigneeId === workerId);
     const done = tasks.filter(t => t.status === "completed" || t.status === "accepted");
     const counts = new Map();
     for (const t of tasks) {
-      const k = t.category || t.priority || "general";
+      // prefer the trade/category of the work; fall back to the priority bucket
+      const k = t.category || t.trade || t.priority || "general";
       counts.set(k, (counts.get(k) || 0) + 1);
     }
     const trades = [...counts.entries()]
@@ -1026,25 +1028,25 @@ const Store = {
     const iso = d => new Date(today.getTime() + d * 86400000).toISOString().slice(0, 10);
 
     // Tasks
-    this.addTask({ propertyId: p1.id, createdBy: owner.id, title: "Fix kitchen faucet", description: "The kitchen faucet is leaking from the base. Needs a new cartridge.", priority: "high", lat: 34.0532, lng: -118.2447, assigneeId: w1.id, dueDate: iso(3) });
-    this.addTask({ propertyId: p1.id, createdBy: owner.id, title: "Paint living room", description: "Walls need repainting. Color: warm white.", priority: "normal", lat: 34.0512, lng: -118.2427, dueDate: iso(7) });
-    this.addTask({ propertyId: p2.id, createdBy: owner.id, title: "Replace roof shingles", description: "Several shingles are missing on the south side.", priority: "high", lat: 34.0632, lng: -118.2547, assigneeId: w3.id, dueDate: iso(-1) });
-    this.addTask({ propertyId: p2.id, createdBy: owner.id, title: "Install outdoor lights", description: "Need motion-sensor lights on the back porch.", priority: "low", lat: 34.0612, lng: -118.2527, assigneeId: w2.id, dueDate: iso(14) });
-    this.addTask({ propertyId: p1.id, createdBy: owner.id, title: "Trim hedges", description: "Front hedges are overgrown. Trim to 3ft height.", priority: "low", lat: 34.0542, lng: -118.2457, dueDate: iso(21) });
+    this.addTask({ propertyId: p1.id, createdBy: owner.id, title: "Fix kitchen faucet", description: "The kitchen faucet is leaking from the base. Needs a new cartridge.", priority: "high", category: "plumbing", lat: 34.0532, lng: -118.2447, assigneeId: w1.id, dueDate: iso(3) });
+    this.addTask({ propertyId: p1.id, createdBy: owner.id, title: "Paint living room", description: "Walls need repainting. Color: warm white.", priority: "normal", category: "painting", lat: 34.0512, lng: -118.2427, dueDate: iso(7) });
+    this.addTask({ propertyId: p2.id, createdBy: owner.id, title: "Replace roof shingles", description: "Several shingles are missing on the south side.", priority: "high", category: "roofing", lat: 34.0632, lng: -118.2547, assigneeId: w3.id, dueDate: iso(-1) });
+    this.addTask({ propertyId: p2.id, createdBy: owner.id, title: "Install outdoor lights", description: "Need motion-sensor lights on the back porch.", priority: "low", category: "electrical", lat: 34.0612, lng: -118.2527, assigneeId: w2.id, dueDate: iso(14) });
+    this.addTask({ propertyId: p1.id, createdBy: owner.id, title: "Trim hedges", description: "Front hedges are overgrown. Trim to 3ft height.", priority: "low", category: "landscaping", lat: 34.0542, lng: -118.2457, dueDate: iso(21) });
 
     // A few finished jobs so worker profiles show a real work history
     const finished = [
-      { propertyId: p1.id, title: "Repair leaking radiator", description: "Sealed a pinhole leak and bled the system.", priority: "high", assigneeId: w1.id, doneBy: w1.id, days: -12 },
-      { propertyId: p2.id, title: "Rewire back porch outlet", description: "Replaced a corroded outdoor outlet and GFCI.", priority: "normal", assigneeId: w2.id, doneBy: w2.id, days: -9 },
-      { propertyId: p2.id, title: "Patch roof flashing", description: "Resealed flashing around the chimney.", priority: "normal", assigneeId: w3.id, doneBy: w3.id, days: -20 },
-      { propertyId: p1.id, title: "Unclog kitchen drain", description: "Cleared a blocked drain trap.", priority: "normal", assigneeId: w1.id, doneBy: w1.id, days: -4 },
-      { propertyId: p2.id, title: "Replace bathroom fan", description: "Swapped a noisy exhaust fan for a quiet unit.", priority: "low", assigneeId: w2.id, doneBy: w2.id, days: -2 },
+      { propertyId: p1.id, title: "Repair leaking radiator", description: "Sealed a pinhole leak and bled the system.", priority: "high", category: "plumbing", assigneeId: w1.id, doneBy: w1.id, days: -12 },
+      { propertyId: p2.id, title: "Rewire back porch outlet", description: "Replaced a corroded outdoor outlet and GFCI.", priority: "normal", category: "electrical", assigneeId: w2.id, doneBy: w2.id, days: -9 },
+      { propertyId: p2.id, title: "Patch roof flashing", description: "Resealed flashing around the chimney.", priority: "normal", category: "roofing", assigneeId: w3.id, doneBy: w3.id, days: -20 },
+      { propertyId: p1.id, title: "Unclog kitchen drain", description: "Cleared a blocked drain trap.", priority: "normal", category: "plumbing", assigneeId: w1.id, doneBy: w1.id, days: -4 },
+      { propertyId: p2.id, title: "Replace bathroom fan", description: "Swapped a noisy exhaust fan for a quiet unit.", priority: "low", category: "electrical", assigneeId: w2.id, doneBy: w2.id, days: -2 },
     ];
     for (const f of finished) {
       const t = this.addTask({
         propertyId: f.propertyId, createdBy: owner.id, title: f.title,
         description: f.description, priority: f.priority, assigneeId: f.assigneeId,
-        dueDate: iso(f.days),
+        dueDate: iso(f.days), category: f.category,
       });
       t.status = "completed";
       t.completedAt = new Date(today.getTime() + f.days * 86400000).toISOString();
