@@ -535,6 +535,11 @@ export class MeshViewer {
     this.markerList = markerList;
     markerPanel.appendChild(markerList);
 
+    // attach every panel (each is toggled by showPanel)
+    c.appendChild(scanPanel);
+    c.appendChild(roomPanel);
+    c.appendChild(markerPanel);
+
     /* ---------------- export ---------------- */
     c.appendChild(el("h3", null, "Export"));
     const exportBar = el("div", "mesh-actions");
