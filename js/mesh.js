@@ -112,11 +112,17 @@ export function roomAt(rooms, x, z) {
   return best;
 }
 
-/** Can the camera stand at (x, z) without being inside a wall? */
+/**
+ * Can the camera stand at (x, z)?
+ *
+ * Rooms are inflated by half a wall thickness rather than shrunk, so the band
+ * along a shared wall counts as standable. Without that, two touching rooms
+ * have a dead strip between them and you cannot walk from one to the next.
+ */
 export function canStand(rooms, x, z) {
   if (!rooms || !rooms.length) return true;
   for (const r of rooms) {
-    if (pointInRoom(r, x, z, WALL_THICKNESS / 2 + 0.05)) return true;
+    if (pointInRoom(r, x, z, -WALL_THICKNESS / 2)) return true;
   }
   return false;
 }
@@ -133,19 +139,47 @@ export function roomSurfaces(room, inset = 0) {
   };
 }
 
-/** Four wall quads for a room, each as two triangles. */
-export function roomWalls(room) {
+/**
+ * Wall quads for a room, as two triangles each.
+ *
+ * A face shared with a neighbouring room is omitted, which leaves an opening
+ * you can walk through. Two rooms that touch therefore connect, instead of
+ * being sealed off from each other by a solid wall.
+ */
+export function roomWalls(room, others = []) {
   const b = roomBounds(room);
   const t = WALL_THICKNESS;
   const out = [];
   const quad = (ax, ay, az, bx, by, bz, cx, cy, cz, dx, dy, dz) =>
     out.push(ax, ay, az, bx, by, bz, cx, cy, cz, ax, ay, az, cx, cy, cz, dx, dy, dz);
 
+  const neighbours = (others || []).filter(o => o && o.id !== room.id);
+
+  /** Is this face flush against another room, with real overlap? */
+  const shared = (side) => neighbours.some(o => {
+    const ob = roomBounds(o);
+    const overlapZ = Math.min(b.maxZ, ob.maxZ) - Math.max(b.minZ, ob.minZ);
+    const overlapX = Math.min(b.maxX, ob.maxX) - Math.max(b.minX, ob.minX);
+    if (side === "west") return Math.abs(ob.maxX - b.minX) < t + 0.01 && overlapZ > 0.5;
+    if (side === "east") return Math.abs(ob.minX - b.maxX) < t + 0.01 && overlapZ > 0.5;
+    if (side === "north") return Math.abs(ob.maxZ - b.minZ) < t + 0.01 && overlapX > 0.5;
+    if (side === "south") return Math.abs(ob.minZ - b.maxZ) < t + 0.01 && overlapX > 0.5;
+    return false;
+  });
+
   const y0 = b.minY, y1 = b.maxY;
-  quad(b.minX - t, y0, b.minZ - t, b.maxX + t, y0, b.minZ - t, b.maxX + t, y1, b.minZ - t, b.minX - t, y1, b.minZ - t);
-  quad(b.minX - t, y0, b.maxZ + t, b.minX - t, y1, b.maxZ + t, b.maxX + t, y1, b.maxZ + t, b.maxX + t, y0, b.maxZ + t);
-  quad(b.minX - t, y0, b.minZ - t, b.minX - t, y1, b.minZ - t, b.minX - t, y1, b.maxZ + t, b.minX - t, y0, b.maxZ + t);
-  quad(b.maxX + t, y0, b.minZ - t, b.maxX + t, y0, b.maxZ + t, b.maxX + t, y1, b.maxZ + t, b.maxX + t, y1, b.minZ - t);
+  if (!shared("north")) {
+    quad(b.minX - t, y0, b.minZ - t, b.maxX + t, y0, b.minZ - t, b.maxX + t, y1, b.minZ - t, b.minX - t, y1, b.minZ - t);
+  }
+  if (!shared("south")) {
+    quad(b.minX - t, y0, b.maxZ + t, b.minX - t, y1, b.maxZ + t, b.maxX + t, y1, b.maxZ + t, b.maxX + t, y0, b.maxZ + t);
+  }
+  if (!shared("west")) {
+    quad(b.minX - t, y0, b.minZ - t, b.minX - t, y1, b.minZ - t, b.minX - t, y1, b.maxZ + t, b.minX - t, y0, b.maxZ + t);
+  }
+  if (!shared("east")) {
+    quad(b.maxX + t, y0, b.minZ - t, b.maxX + t, y0, b.maxZ + t, b.maxX + t, y1, b.maxZ + t, b.maxX + t, y1, b.minZ - t);
+  }
   return out;
 }
 
@@ -741,7 +775,7 @@ export class MeshViewer {
       this.roomGroup.add(new THREE.Mesh(cg, ceilMat));
 
       const wg = new THREE.BufferGeometry();
-      wg.setAttribute("position", new THREE.Float32BufferAttribute(roomWalls(room), 3));
+      wg.setAttribute("position", new THREE.Float32BufferAttribute(roomWalls(room, this.rooms), 3));
       wg.computeVertexNormals();
       this.roomGroup.add(new THREE.Mesh(wg, wallMat));
 
@@ -789,17 +823,21 @@ export class MeshViewer {
   }
 
   addHousePreset() {
+    // Rooms are laid end to end, each sharing a wall with the next, all on the
+    // same centre line. A gap between rooms is a gap you cannot walk across,
+    // so the preset is deliberately built with no gaps.
     const layout = [
       ["Living room", 5.2, 4.2, 2.6],
-      ["Kitchen", 3.6, 3.2, 2.6],
-      ["Hallway", 1.4, 4.0, 2.6],
+      ["Kitchen", 3.6, 3.4, 2.6],
+      ["Hallway", 1.4, 3.4, 2.6],
       ["Bedroom", 4.2, 3.6, 2.5],
-      ["Bathroom", 2.4, 2.2, 2.4],
+      ["Bathroom", 2.4, 2.4, 2.4],
     ];
-    let x = 0;
+    this.rooms = [];
+    let edge = 0;                        // left edge of the next room
     layout.forEach(([name, w, d, h]) => {
-      this.rooms.push({ id: uid(), name, x, z: 0, y: 0, w, d, h });
-      x += w + 2.4;
+      this.rooms.push({ id: uid(), name, x: edge + w / 2, z: 0, y: 0, w, d, h });
+      edge += w;                         // next room starts exactly where this ends
     });
     this.renderRooms();
     this.refreshRoomList();
@@ -813,7 +851,7 @@ export class MeshViewer {
         const a = roomBounds(this.rooms[i]), b = roomBounds(this.rooms[j]);
         const gapX = Math.max(0, Math.max(a.minX, b.minX) - Math.min(a.maxX, b.maxX));
         const gapZ = Math.max(0, Math.max(a.minZ, b.minZ) - Math.min(a.maxZ, b.maxZ));
-        if (gapX < 2.6 && gapZ < 2.6) {
+        if (gapX < 3.5 && gapZ < 3.5) {
           if (gapZ <= gapX) {
             const shift = (gapX / 2) * (b.minX > a.minX ? -1 : 1);
             this.rooms[j].x += shift;
@@ -1387,7 +1425,7 @@ export class MeshViewer {
       const surf = roomSurfaces(room, 0);
       emit(surf.floor); s += tri(surf.floor.length / 3);
       emit(surf.ceiling); s += tri(surf.ceiling.length / 3);
-      const w = roomWalls(room);
+      const w = roomWalls(room, this.rooms);
       emit(w); s += tri(w.length / 3);
     });
     if (this.points.length) {
@@ -1423,7 +1461,7 @@ export class MeshViewer {
       const surf = roomSurfaces(room, 0);
       pushTri(surf.floor);
       pushTri(surf.ceiling);
-      pushTri(roomWalls(room));
+      pushTri(roomWalls(room, this.rooms));
     });
     if (!positions.length) this.points.forEach(p => positions.push(p.x, p.y, p.z));
 
