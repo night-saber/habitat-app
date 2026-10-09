@@ -575,6 +575,11 @@ img, video, canvas, table { max-width: 100%; }
 }
 
 @media (max-width: 640px) {
+  /* Tap targets by width as well as pointer type: some browsers and emulators
+     report a fine pointer on a touch device, so the coarse-pointer rule alone
+     is not enough to keep buttons finger-sized. */
+  .btn.sm, .btn.ghost.sm, .btn.sm.ghost, .btn.sm.danger { min-height: 42px; padding: 10px 14px; }
+  .bottom-nav-btn { font-size: 9px; padding: 6px 2px; }
   /* room for the fixed bottom nav */
   .main { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
   .tabs { padding-left: 12px; padding-right: 12px; }
