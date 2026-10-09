@@ -58,8 +58,17 @@ self.addEventListener("fetch", (e) => {
   // Network-first for ALL same-origin assets (JS, CSS, images).
   // Serving code cache-first means a deploy stays invisible until the cache
   // version is bumped by hand — the cache is only an offline fallback.
+  //
+  // The request is revalidated rather than trusted from the browser's HTTP
+  // cache: GitHub Pages serves assets with a max-age, so without this a
+  // deploy can sit behind a stale HTTP cache even though the service worker
+  // is already fetching from the network. Unchanged files still answer 304,
+  // so revalidation is cheap.
+  const req = (e.request.method === "GET")
+    ? new Request(e.request, { cache: "no-cache" })
+    : e.request;
   e.respondWith(
-    fetch(e.request).then((response) => {
+    fetch(req).then((response) => {
       if (response && response.ok && e.request.method === "GET") {
         const clone = response.clone();
         caches.open(CACHE_NAME).then((cache) => cache.put(e.request, clone));
