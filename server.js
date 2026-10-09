@@ -7,6 +7,7 @@
  * Environment variables:
  *   PORT - server port (default 3000)
  *   JWT_SECRET - secret for JWT tokens (change in production!)
+ *   FRONTEND_URL - frontend URL for password reset links (default http://localhost:3000)
  * 
  * Run: node server.js
  */
@@ -16,13 +17,41 @@ const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { v4: uuid } = require('uuid');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'habitat-dev-secret-change-in-production';
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
+
+// ==================== FILE PERSISTENCE ====================
+const DATA_DIR = path.join(__dirname, 'data');
+const DATA_FILE = path.join(DATA_DIR, 'db.json');
+
+function saveToDisk() {
+  try {
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(DATA_FILE, JSON.stringify(db, null, 2));
+  } catch (e) {
+    console.error('Failed to save to disk:', e);
+  }
+}
+
+function loadFromDisk() {
+  try {
+    if (fs.existsSync(DATA_FILE)) {
+      const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+      Object.assign(db, data);
+      console.log('Loaded data from disk');
+    }
+  } catch (e) {
+    console.error('Failed to load from disk:', e);
+  }
+}
 
 // ==================== IN-MEMORY DATABASE ====================
 // In production, replace with PostgreSQL/MongoDB
@@ -38,7 +67,41 @@ const db = {
   messages: [],
   hires: [],
   crews: [],
+  resetTokens: [],
 };
+
+// Load persisted data on startup
+loadFromDisk();
+
+// ==================== HELPER FUNCTIONS ====================
+
+function generateUsername(email) {
+  const prefix = email.split('@')[0].replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+  let username = prefix || 'user';
+  let counter = 1;
+  while (db.users.find(u => u.username === username)) {
+    username = `${prefix}${counter}`;
+    counter++;
+  }
+  return username;
+}
+
+function generateRecoveryCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const segments = [];
+  for (let i = 0; i < 3; i++) {
+    let seg = '';
+    for (let j = 0; j < 4; j++) {
+      seg += chars[Math.floor(Math.random() * chars.length)];
+    }
+    segments.push(seg);
+  }
+  return `HABIT-${segments.join('-')}`;
+}
+
+function generateResetToken() {
+  return uuid() + '-' + uuid();
+}
 
 // ==================== AUTH MIDDLEWARE ====================
 function auth(req, res, next) {
@@ -54,21 +117,39 @@ function auth(req, res, next) {
 
 // ==================== AUTH ROUTES ====================
 
+// Check username availability
+app.get('/api/check-username', (req, res) => {
+  const username = (req.query.username || '').trim().toLowerCase();
+  if (!username) return res.json({ available: false, error: 'Username required' });
+  const taken = db.users.some(u => u.username === username);
+  res.json({ available: !taken });
+});
+
 // Signup
 app.post('/api/auth/signup', async (req, res) => {
   try {
-    const { name, email, password, role } = req.body;
+    const { name, email, password, role, username: requestedUsername } = req.body;
     if (!name || !email || !password) return res.status(400).json({ error: 'Missing fields' });
     if (password.length < 8) return res.status(400).json({ error: 'Password too short' });
     
-    const existing = db.users.find(u => u.email === email.toLowerCase());
+    const normalizedEmail = email.toLowerCase();
+    const existing = db.users.find(u => u.email === normalizedEmail);
     if (existing) return res.status(409).json({ error: 'Email already registered' });
     
+    // Generate or validate username
+    let username = requestedUsername ? requestedUsername.trim().toLowerCase() : generateUsername(normalizedEmail);
+    if (!username) username = generateUsername(normalizedEmail);
+    if (db.users.find(u => u.username === username)) {
+      return res.status(409).json({ error: 'Username already taken' });
+    }
+    
     const hashed = await bcrypt.hash(password, 10);
+    const recoveryCode = generateRecoveryCode();
     const user = {
       id: uuid(),
       name,
-      email: email.toLowerCase(),
+      email: normalizedEmail,
+      username,
       password: hashed,
       role: role === 'worker' ? 'worker' : 'owner',
       phone: '',
@@ -79,9 +160,11 @@ app.post('/api/auth/signup', async (req, res) => {
       serviceRadius: 10,
       rating: 0,
       reviewCount: 0,
+      recoveryCode,
       createdAt: new Date().toISOString(),
     };
     db.users.push(user);
+    saveToDisk();
     
     const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '30d' });
     res.json({ token, user: { ...user, password: undefined } });
@@ -90,33 +173,109 @@ app.post('/api/auth/signup', async (req, res) => {
   }
 });
 
-// Login
+// Login (email OR username)
 app.post('/api/auth/login', async (req, res) => {
   try {
-    const { email, password } = req.body;
-    const user = db.users.find(u => u.email === (email || '').toLowerCase());
-    if (!user) return res.status(404).json({ error: 'No account with that email' });
+    const { email, username, password } = req.body;
+    const identifier = (email || username || '').trim().toLowerCase();
+    if (!identifier) return res.status(400).json({ error: 'Email or username required' });
+    
+    const user = db.users.find(u => 
+      u.email === identifier || u.username === identifier
+    );
+    if (!user) return res.status(404).json({ error: 'No account found' });
     
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) return res.status(401).json({ error: 'Wrong password' });
     
-    const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresId: '30d' });
+    const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '30d' });
     res.json({ token, user: { ...user, password: undefined } });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-// Reset password
-app.post('/api/auth/reset', async (req, res) => {
+// Forgot password - generate reset token and "send" email
+app.post('/api/auth/forgot-password', async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email } = req.body;
     const user = db.users.find(u => u.email === (email || '').toLowerCase());
     if (!user) return res.status(404).json({ error: 'No account with that email' });
+    
+    // Invalidate any existing tokens for this user
+    db.resetTokens = db.resetTokens.filter(t => t.userId !== user.id);
+    
+    const token = generateResetToken();
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString(); // 1 hour
+    db.resetTokens.push({ token, userId: user.id, expiresAt });
+    saveToDisk();
+    
+    // "Send" email (log for now)
+    const resetLink = `${FRONTEND_URL}/reset?token=${token}`;
+    console.log(`\n=== PASSWORD RESET EMAIL ===`);
+    console.log(`To: ${user.email}`);
+    console.log(`Subject: Reset your Habitat password`);
+    console.log(`Link: ${resetLink}`);
+    console.log(`============================\n`);
+    
+    res.json({ success: true, message: 'Password reset email sent' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Reset password with token
+app.post('/api/auth/reset-password', async (req, res) => {
+  try {
+    const { token, password } = req.body;
+    if (!token) return res.status(400).json({ error: 'Token required' });
     if (!password || password.length < 8) return res.status(400).json({ error: 'Password too short' });
     
+    const resetToken = db.resetTokens.find(t => t.token === token);
+    if (!resetToken) return res.status(400).json({ error: 'Invalid or expired token' });
+    
+    if (new Date(resetToken.expiresAt) < new Date()) {
+      db.resetTokens = db.resetTokens.filter(t => t.token !== token);
+      saveToDisk();
+      return res.status(400).json({ error: 'Token expired' });
+    }
+    
+    const user = db.users.find(u => u.id === resetToken.userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    
     user.password = await bcrypt.hash(password, 10);
+    db.resetTokens = db.resetTokens.filter(t => t.token !== token);
+    saveToDisk();
+    
     res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Account recovery with recovery code
+app.post('/api/auth/recover', async (req, res) => {
+  try {
+    const { email, code } = req.body;
+    const user = db.users.find(u => u.email === (email || '').toLowerCase());
+    if (!user) return res.status(404).json({ error: 'No account with that email' });
+    
+    const normalizedCode = (code || '').trim().toUpperCase();
+    if (user.recoveryCode !== normalizedCode) {
+      return res.status(401).json({ error: 'Invalid recovery code' });
+    }
+    
+    // Generate a new random password
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+    let newPassword = '';
+    for (let i = 0; i < 12; i++) {
+      newPassword += chars[Math.floor(Math.random() * chars.length)];
+    }
+    
+    user.password = await bcrypt.hash(newPassword, 10);
+    saveToDisk();
+    
+    res.json({ success: true, password: newPassword });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -134,10 +293,23 @@ app.put('/api/me', auth, (req, res) => {
   const user = db.users.find(u => u.id === req.user.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
   
-  const allowed = ['name', 'phone', 'location', 'bio', 'skills', 'trade', 'serviceRadius'];
+  const allowed = ['name', 'phone', 'location', 'bio', 'skills', 'trade', 'serviceRadius', 'username'];
   for (const key of allowed) {
-    if (req.body[key] !== undefined) user[key] = req.body[key];
+    if (req.body[key] !== undefined) {
+      if (key === 'username') {
+        const newUsername = req.body[key].trim().toLowerCase();
+        if (newUsername && newUsername !== user.username) {
+          if (db.users.find(u => u.username === newUsername && u.id !== user.id)) {
+            return res.status(409).json({ error: 'Username already taken' });
+          }
+          user.username = newUsername;
+        }
+      } else {
+        user[key] = req.body[key];
+      }
+    }
   }
+  saveToDisk();
   res.json({ ...user, password: undefined });
 });
 
@@ -169,6 +341,7 @@ app.post('/api/properties', auth, (req, res) => {
     createdAt: new Date().toISOString(),
   };
   db.properties.push(prop);
+  saveToDisk();
   res.json(prop);
 });
 
@@ -181,6 +354,7 @@ app.put('/api/properties/:id', auth, (req, res) => {
   for (const key of allowed) {
     if (req.body[key] !== undefined) prop[key] = req.body[key];
   }
+  saveToDisk();
   res.json(prop);
 });
 
@@ -189,6 +363,7 @@ app.delete('/api/properties/:id', auth, (req, res) => {
   if (idx === -1) return res.status(404).json({ error: 'Not found' });
   if (db.properties[idx].ownerId !== req.user.id) return res.status(403).json({ error: 'Not your property' });
   db.properties.splice(idx, 1);
+  saveToDisk();
   res.json({ success: true });
 });
 
@@ -228,6 +403,7 @@ app.post('/api/tasks', auth, (req, res) => {
     comments: [],
   };
   db.tasks.push(task);
+  saveToDisk();
   res.json(task);
 });
 
@@ -239,6 +415,7 @@ app.put('/api/tasks/:id', auth, (req, res) => {
   for (const key of allowed) {
     if (req.body[key] !== undefined) task[key] = req.body[key];
   }
+  saveToDisk();
   res.json(task);
 });
 
@@ -249,6 +426,7 @@ app.delete('/api/tasks/:id', auth, (req, res) => {
   const prop = db.properties.find(p => p.id === task.propertyId);
   if (prop?.ownerId !== req.user.id) return res.status(403).json({ error: 'Not your task' });
   db.tasks.splice(idx, 1);
+  saveToDisk();
   res.json({ success: true });
 });
 
@@ -280,6 +458,7 @@ app.post('/api/messages', auth, (req, res) => {
     createdAt: new Date().toISOString(),
   };
   db.messages.push(msg);
+  saveToDisk();
   res.json(msg);
 });
 
@@ -303,6 +482,7 @@ app.post('/api/house-records', auth, (req, res) => {
     createdAt: new Date().toISOString(),
   };
   db.houseRecords.push(record);
+  saveToDisk();
   res.json(record);
 });
 
@@ -324,6 +504,7 @@ app.post('/api/hires', auth, (req, res) => {
     createdAt: new Date().toISOString(),
   };
   db.hires.push(hire);
+  saveToDisk();
   res.json(hire);
 });
 
@@ -346,24 +527,110 @@ app.post('/api/crews', auth, (req, res) => {
     createdAt: new Date().toISOString(),
   };
   db.crews.push(crew);
+  saveToDisk();
   res.json(crew);
 });
 
 // ==================== EXPORT/IMPORT ====================
 
-app.post('/api/export', auth, (req, res) => {
+// Export all user data
+app.get('/api/export', auth, (req, res) => {
   const userId = req.user.id;
+  const userProps = db.properties.filter(p => p.ownerId === userId);
+  const propIds = new Set(userProps.map(p => p.id));
+  
   res.json({
-    properties: db.properties.filter(p => p.ownerId === userId),
-    tasks: db.tasks.filter(t => db.properties.find(p => p.id === t.propertyId)?.ownerId === userId),
-    houseRecords: db.houseRecords.filter(r => db.properties.find(p => p.id === r.propertyId)?.ownerId === userId),
+    properties: userProps,
+    tasks: db.tasks.filter(t => propIds.has(t.propertyId)),
+    houseRecords: db.houseRecords.filter(r => propIds.has(r.propertyId)),
     groups: db.groups.filter(g => g.ownerId === userId),
     crews: db.crews.filter(c => c.ownerId === userId),
+    hires: db.hires.filter(h => h.ownerId === userId || h.workerId === userId),
+    messages: db.messages.filter(m => m.fromId === userId || m.toId === userId),
+    workerProfiles: db.workerProfiles.filter(p => p.userId === userId),
+    taskRequests: db.taskRequests.filter(r => r.workerId === userId || r.ownerId === userId),
+    exportedAt: new Date().toISOString(),
   });
+});
+
+// Import user data
+app.post('/api/import', auth, (req, res) => {
+  try {
+    const userId = req.user.id;
+    const data = req.body;
+    
+    if (!data || typeof data !== 'object') {
+      return res.status(400).json({ error: 'Invalid data' });
+    }
+    
+    // Merge imported data (don't delete existing, just add/update)
+    if (Array.isArray(data.properties)) {
+      for (const p of data.properties) {
+        if (p.ownerId === userId && !db.properties.find(x => x.id === p.id)) {
+          db.properties.push(p);
+        }
+      }
+    }
+    if (Array.isArray(data.tasks)) {
+      for (const t of data.tasks) {
+        if (!db.tasks.find(x => x.id === t.id)) {
+          db.tasks.push(t);
+        }
+      }
+    }
+    if (Array.isArray(data.houseRecords)) {
+      for (const r of data.houseRecords) {
+        if (!db.houseRecords.find(x => x.id === r.id)) {
+          db.houseRecords.push(r);
+        }
+      }
+    }
+    if (Array.isArray(data.crews)) {
+      for (const c of data.crews) {
+        if (c.ownerId === userId && !db.crews.find(x => x.id === c.id)) {
+          db.crews.push(c);
+        }
+      }
+    }
+    if (Array.isArray(data.hires)) {
+      for (const h of data.hires) {
+        if (!db.hires.find(x => x.id === h.id)) {
+          db.hires.push(h);
+        }
+      }
+    }
+    if (Array.isArray(data.messages)) {
+      for (const m of data.messages) {
+        if (!db.messages.find(x => x.id === m.id)) {
+          db.messages.push(m);
+        }
+      }
+    }
+    if (Array.isArray(data.workerProfiles)) {
+      for (const p of data.workerProfiles) {
+        if (p.userId === userId && !db.workerProfiles.find(x => x.id === p.id)) {
+          db.workerProfiles.push(p);
+        }
+      }
+    }
+    if (Array.isArray(data.taskRequests)) {
+      for (const r of data.taskRequests) {
+        if (!db.taskRequests.find(x => x.id === r.id)) {
+          db.taskRequests.push(r);
+        }
+      }
+    }
+    
+    saveToDisk();
+    res.json({ success: true, message: 'Data imported successfully' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ==================== START ====================
 
 app.listen(PORT, () => {
   console.log(`Habitat API running on port ${PORT}`);
+  console.log(`Data file: ${DATA_FILE}`);
 });

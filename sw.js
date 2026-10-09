@@ -1,12 +1,14 @@
 /* Habitat — service worker for offline support */
 "use strict";
 
-const CACHE_NAME = "habitat-v1";
+const CACHE_NAME = "habitat-v2";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./css/style.css",
   "./js/app.js",
+  "./js/store.js",
+  "./js/i18n.js",
   "./manifest.json",
   "./assets/icon.svg",
   "./assets/favicon.svg",
@@ -49,15 +51,16 @@ self.addEventListener("fetch", (e) => {
     return;
   }
 
-  // Cache-first for static assets
+  // Network-first for ALL same-origin assets (JS, CSS, images).
+  // Serving code cache-first means a deploy stays invisible until the cache
+  // version is bumped by hand — the cache is only an offline fallback.
   e.respondWith(
-    caches.match(e.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(e.request).then((response) => {
+    fetch(e.request).then((response) => {
+      if (response && response.ok && e.request.method === "GET") {
         const clone = response.clone();
         caches.open(CACHE_NAME).then((cache) => cache.put(e.request, clone));
-        return response;
-      });
-    })
+      }
+      return response;
+    }).catch(() => caches.match(e.request))
   );
 });

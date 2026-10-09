@@ -377,3 +377,43 @@ h1, h2, h3, h4 { letter-spacing: -.02em; line-height: 1.2; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+/* ------------------------------------------- people, profiles, crews */
+.clickable-card { cursor: pointer; transition: border-color var(--speed), transform var(--speed); }
+.clickable-card:hover { border-color: var(--green); transform: translateY(-1px); }
+.clickable-card:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.job-summary { color: var(--cyan); }
+
+.avatar.lg { width: 56px; height: 56px; font-size: 22px; }
+
+.person-head { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.person-head-info { display: flex; flex-direction: column; gap: 2px; flex: 1 1 200px; }
+.person-head-info h3 { margin: 0; }
+
+.stat-row { display: flex; gap: 10px; flex-wrap: wrap; }
+.stat-row .stat {
+  flex: 1 1 100px; padding: 10px 12px; border-radius: var(--radius);
+  background: var(--panel2); border: 1px solid var(--line);
+}
+
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip {
+  padding: 4px 10px; border-radius: 999px; font-size: 12px;
+  background: var(--panel3); border: 1px solid var(--line2); color: var(--text);
+}
+
+.job-row {
+  display: flex; gap: 12px; align-items: flex-start; justify-content: space-between;
+  padding: 10px 12px; border-radius: var(--radius);
+  background: var(--panel2); border: 1px solid var(--line);
+}
+.job-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+
+.assign-row {
+  display: flex; gap: 10px; align-items: center; cursor: pointer;
+  padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--panel2);
+}
+.assign-row:hover { border-color: var(--green); }
+
+.pill.unread { background: var(--green); color: #06231a; font-weight: 700; border-color: var(--green); }

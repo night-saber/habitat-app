@@ -136,8 +136,8 @@
     <!-- Login -->
     <form id="loginForm" class="stack">
       <label class="field">
-        <span>Email</span>
-        <input type="email" name="email" autocomplete="email" required>
+        <span>Email or Username</span>
+        <input type="text" name="email" autocomplete="email username" required>
       </label>
       <label class="field">
         <span>Password</span>
@@ -162,6 +162,10 @@
         <input type="email" name="email" autocomplete="email" required>
       </label>
       <label class="field">
+        <span>Username (optional)</span>
+        <input type="text" name="username" autocomplete="username" placeholder="Auto-generated from email if empty">
+      </label>
+      <label class="field">
         <span>Password</span>
         <input type="password" name="password" autocomplete="new-password" minlength="8" required>
         <small>8+ characters</small>
@@ -182,19 +186,24 @@
     <!-- Reset -->
     <form id="resetForm" class="stack" hidden>
       <h2>Reset password</h2>
-      <label class="field">
-        <span>Email</span>
-        <input type="email" name="email" autocomplete="email" required>
-      </label>
-      <label class="field">
-        <span>New password</span>
-        <input type="password" name="next" autocomplete="new-password" minlength="8" required>
-      </label>
-      <label class="field">
-        <span>Confirm password</span>
-        <input type="password" name="confirm" autocomplete="new-password" minlength="8" required>
-      </label>
-      <button class="btn wide" type="submit">Reset password</button>
+      <div id="resetRequestFields">
+        <label class="field">
+          <span>Email</span>
+          <input type="email" name="email" autocomplete="email" required>
+        </label>
+        <button class="btn wide" type="submit">Send Reset Link</button>
+      </div>
+      <div id="resetTokenFields" hidden>
+        <label class="field">
+          <span>New password</span>
+          <input type="password" name="next" autocomplete="new-password" minlength="8" required>
+        </label>
+        <label class="field">
+          <span>Confirm password</span>
+          <input type="password" name="confirm" autocomplete="new-password" minlength="8" required>
+        </label>
+        <button class="btn wide" type="submit">Reset Password</button>
+      </div>
       <p class="swap">
         <button type="button" class="link" id="toLogin2">Log in</button>
       </p>
@@ -229,9 +238,6 @@
     <div id="view-tasks" class="view" hidden></div>
     <div id="view-people" class="view" hidden></div>
     <div id="view-map" class="view" hidden></div>
-    <div id="view-hiring" class="view" hidden></div>
-    <div id="view-messages" class="view" hidden></div>
-    <div id="view-crews" class="view" hidden></div>
     <div id="view-profile" class="view" hidden></div>
     <div id="view-settings" class="view" hidden></div>
   </main>

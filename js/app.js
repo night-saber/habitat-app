@@ -183,6 +183,16 @@ function showResetForm() {
   $("#loginForm").hidden = true;
   $("#signupForm").hidden = true;
   $("#resetForm").hidden = false;
+  // Check if we have a token in the URL
+  const urlParams = new URLSearchParams(window.location.search);
+  const token = urlParams.get("token");
+  if (token) {
+    $("#resetRequestFields").hidden = true;
+    $("#resetTokenFields").hidden = false;
+  } else {
+    $("#resetRequestFields").hidden = false;
+    $("#resetTokenFields").hidden = true;
+  }
 }
 
 function authError(msg) {
@@ -218,11 +228,18 @@ async function doSignup(e) {
     const u = await Store.signup({
       name: f.name.value, email: f.email.value,
       password: f.password.value, role: f.role.value,
+      username: f.username ? f.username.value : "",
     });
     Store.setSession(u.id);
     ME = u;
     showApp();
     startTutorial();
+    // Show recovery code
+    if (u.recoveryCode) {
+      showRecoveryCode(u.recoveryCode);
+    }
+    // Start auto-export
+    Store.startAutoExport();
   } catch (err) {
     authError(err.message || "Signup failed");
   } finally {
@@ -235,17 +252,53 @@ async function doReset(e) {
   const f = e.target;
   if (f.next.value !== f.confirm.value) return authError("Passwords don't match.");
   try {
-    await Store.resetPassword(f.email.value, f.next.value);
-    showLoginForm();
-    toast("Password reset successful. Log in with your new password.", "good");
+    // Check if we have a token (from email link) or need to request one
+    const urlParams = new URLSearchParams(window.location.search);
+    const token = urlParams.get("token");
+    if (token) {
+      await Store.resetPassword(token, f.next.value);
+      showLoginForm();
+      toast("Password reset successful. Log in with your new password.", "good");
+      // Clean URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else {
+      // Request reset email
+      await Store.forgotPassword(f.email.value);
+      showLoginForm();
+      toast("If an account exists, a password reset email has been sent.", "good");
+    }
   } catch (err) {
     authError(err.message || "Reset failed");
   }
 }
 
+function showRecoveryCode(code) {
+  const body = el("div", "stack");
+  body.style.gap = "12px";
+  body.appendChild(el("h3", null, "Account Recovery Code"));
+  body.appendChild(el("p", "muted", "Save this code in a safe place. If you ever lose access to your account, you can use it to recover it."));
+  const codeDisplay = el("div");
+  codeDisplay.style.cssText = "background:var(--bg2);border:2px solid var(--green);border-radius:12px;padding:16px;text-align:center;font-family:monospace;font-size:18px;font-weight:700;letter-spacing:2px;color:var(--green)";
+  codeDisplay.textContent = code;
+  body.appendChild(codeDisplay);
+  const copyBtn = el("button", "btn sm", "Copy Code");
+  copyBtn.onclick = () => {
+    navigator.clipboard.writeText(code).then(() => toast("Copied!", "good"));
+  };
+  body.appendChild(copyBtn);
+  const actions = el("div", "modal-actions");
+  const okBtn = el("button", "btn", "I've Saved It");
+  actions.appendChild(okBtn);
+  body.appendChild(actions);
+  const m = modal("Recovery Code", body);
+  okBtn.onclick = () => closeModal(m);
+  openModal(m);
+}
+
 function logout() {
   Store.commit();
   Store.setSession(null);
+  Store.stopAutoExport();
   ME = null;
   if (map) { map.remove(); map = null; }
   showLanding();
@@ -308,9 +361,6 @@ function render() {
   else if (view === "tasks") renderTasks();
   else if (view === "people") renderPeople();
   else if (view === "map") renderMap();
-  else if (view === "hiring") renderHiring();
-  else if (view === "messages") renderMessages();
-  else if (view === "crews") renderCrews();
   else if (view === "profile") renderProfile();
   else if (view === "settings") renderSettings();
 }
@@ -536,17 +586,69 @@ function renderPeople() {
 
   wrap.appendChild(el("h2", null, "People"));
 
-  // Show users of the opposite role
-  const users = ME.role === "owner" ? Store.workers() : Store.db.users.filter(u => u.role === "owner" && u.active).map(u => Store.publicUser(u));
+  // Search bar
+  const searchInput = el("input");
+  searchInput.type = "search";
+  searchInput.placeholder = "Search people...";
+  searchInput.style.cssText = "background:var(--bg2);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:10px 12px;width:100%;margin-bottom:16px";
+  wrap.appendChild(searchInput);
 
-  if (!users.length) {
+  // Recent conversations section
+  const msgs = Store.getMessages(ME.id);
+  if (msgs.length) {
+    const convSec = el("div", "card");
+    convSec.appendChild(el("h3", null, "Recent Conversations"));
+    const conversations = new Map();
+    msgs.forEach(m => {
+      const partnerId = m.fromId === ME.id ? m.toId : m.fromId;
+      if (!conversations.has(partnerId)) conversations.set(partnerId, []);
+      conversations.get(partnerId).push(m);
+    });
+    const convList = el("div", "grid");
+    conversations.forEach((msgs, partnerId) => {
+      const partner = Store.user(partnerId);
+      const card = el("div", "card");
+      card.appendChild(el("h4", null, partner?.name || "Unknown"));
+      const last = msgs[msgs.length - 1];
+      card.appendChild(el("p", "muted sm", last.text.slice(0, 60)));
+      card.appendChild(el("p", "muted sm", relTime(last.createdAt)));
+      const acts = el("div", "card-actions");
+      const viewBtn = el("button", "btn sm ghost", "View");
+      viewBtn.onclick = () => openConversationModal(partnerId);
+      acts.appendChild(viewBtn);
+      card.appendChild(acts);
+      convList.appendChild(card);
+    });
+    convSec.appendChild(convList);
+    wrap.appendChild(convSec);
+  }
+
+  // Show users of the opposite role
+  const allUsers = ME.role === "owner" ? Store.workers() : Store.db.users.filter(u => u.role === "owner" && u.active).map(u => Store.publicUser(u));
+
+  const list = el("div", "grid");
+  const filtered = allUsers.filter(u => {
+    const q = searchInput.value.toLowerCase();
+    if (!q) return true;
+    return (u.name || "").toLowerCase().includes(q) || (u.username || "").toLowerCase().includes(q);
+  });
+
+  if (!filtered.length) {
     wrap.appendChild(emptyState("No users found", ME.role === "owner" ? "No workers registered yet" : "No owners registered yet"));
     return;
   }
 
-  const list = el("div", "grid");
-  users.forEach(u => {
-    const card = el("div", "card");
+  filtered.forEach(u => {
+    const card = el("div", "card clickable-card");
+    card.tabIndex = 0;
+    card.setAttribute("role", "button");
+    card.setAttribute("aria-label", `View ${u.name}'s profile`);
+    const openProfile = () => openPersonProfile(u.id);
+    card.onclick = openProfile;
+    card.onkeydown = (ev) => {
+      if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); openProfile(); }
+    };
+
     const av = el("span", "avatar", initial(u.name));
     av.style.background = avatarColor(u.id);
     av.style.width = "40px";
@@ -554,6 +656,7 @@ function renderPeople() {
     av.style.fontSize = "16px";
     card.appendChild(av);
     card.appendChild(el("h3", null, u.name));
+    if (u.username) card.appendChild(el("p", "muted sm", `@${u.username}`));
     card.appendChild(el("p", "muted sm", u.role === "worker" ? "Trade Worker" : "Property Owner"));
 
     // Show profile info for workers
@@ -570,6 +673,10 @@ function renderPeople() {
           card.appendChild(el("p", "muted sm", `Skills: ${profile.skills.join(", ")}`));
         }
       }
+      // how much work they have done — the reason to click through
+      const stats = Store.jobStats(u.id);
+      card.appendChild(el("p", "muted sm job-summary",
+        stats.total ? `${stats.done} completed · ${stats.active} in progress` : "No jobs yet"));
     }
 
     // Show owner info
@@ -579,18 +686,23 @@ function renderPeople() {
     }
 
     const acts = el("div", "card-actions");
+    const unread = Store.unreadFrom(ME.id, u.id);
+    if (unread) {
+      const badge = el("span", "pill unread", String(unread));
+      acts.appendChild(badge);
+    }
     const msgBtn = el("button", "btn sm ghost", "💬 Message");
-    msgBtn.onclick = () => openConversationModal(u.id);
+    msgBtn.onclick = (ev) => { ev.stopPropagation(); openConversationModal(u.id); };
     acts.appendChild(msgBtn);
 
     if (ME.role === "owner" && u.role === "worker") {
       const hireBtn = el("button", "btn sm", "Hire");
-      hireBtn.onclick = () => openHireModal(u);
+      hireBtn.onclick = (ev) => { ev.stopPropagation(); openHireModal(u); };
       acts.appendChild(hireBtn);
     }
     if (ME.role === "worker" && u.role === "owner") {
       const reqBtn = el("button", "btn sm", "Request Work");
-      reqBtn.onclick = () => openRequestWorkModal(u);
+      reqBtn.onclick = (ev) => { ev.stopPropagation(); openRequestWorkModal(u); };
       acts.appendChild(reqBtn);
     }
 
@@ -598,9 +710,219 @@ function renderPeople() {
     list.appendChild(card);
   });
   wrap.appendChild(list);
+
+  // Wire search
+  searchInput.oninput = () => { renderPeople(); };
+}
+
+// ==================== PERSON PROFILE ====================
+/**
+ * A person's page: who they are, the jobs they have done, and a way to
+ * message them. Reached by clicking a card in the People list.
+ */
+function openPersonProfile(userId) {
+  const u = Store.user(userId);
+  if (!u) return;
+
+  const body = el("div", "stack");
+  body.style.gap = "14px";
+
+  // --- header
+  const head = el("div", "person-head");
+  const av = el("span", "avatar lg", initial(u.name));
+  av.style.background = avatarColor(u.id);
+  head.appendChild(av);
+  const hi = el("div", "person-head-info");
+  hi.appendChild(el("h3", null, u.name));
+  if (u.username) hi.appendChild(el("p", "muted sm", `@${u.username}`));
+  hi.appendChild(el("p", "muted sm", u.role === "worker" ? "Trade Worker" : "Property Owner"));
+  const profile = Store.getWorkerProfile(u.id) || {};
+  const metaBits = [];
+  if (profile.trade) metaBits.push(profile.trade);
+  if (u.location || profile.location) metaBits.push(u.location || profile.location);
+  if (profile.serviceRadius) metaBits.push(`${profile.serviceRadius} km radius`);
+  if (profile.rating) metaBits.push(`⭐ ${profile.rating}`);
+  if (metaBits.length) hi.appendChild(el("p", "muted sm", metaBits.join(" · ")));
+  if (u.phone) hi.appendChild(el("p", "muted sm", u.phone));
+  head.appendChild(hi);
+  body.appendChild(head);
+
+  if (profile.bio) body.appendChild(el("p", "muted", profile.bio));
+  if (profile.skills && profile.skills.length) {
+    body.appendChild(el("p", "muted sm", `Skills: ${profile.skills.join(", ")}`));
+  }
+
+  // --- job history (workers)
+  if (u.role === "worker") {
+    const history = Store.jobHistoryFor(u.id);
+    const stats = history.stats;
+
+    const tiles = el("div", "stat-row");
+    const tile = (label, value) => {
+      const s = el("div", "stat");
+      s.appendChild(el("b", null, String(value)));
+      s.appendChild(el("span", null, label));
+      return s;
+    };
+    tiles.appendChild(tile("Jobs", stats.total));
+    tiles.appendChild(tile("Completed", stats.done));
+    tiles.appendChild(tile("In progress", stats.active));
+    tiles.appendChild(tile("Properties", Store.propertiesWorkedOn(u.id).length));
+    body.appendChild(tiles);
+
+    // types of work done
+    body.appendChild(el("h4", null, "Types of work done"));
+    if (!stats.trades.length) {
+      body.appendChild(el("p", "muted sm", "No jobs recorded yet."));
+    } else {
+      const chips = el("div", "chips");
+      stats.trades.forEach(({ trade, count }) => {
+        chips.appendChild(el("span", "chip", `${tradeLabel(trade)} · ${count}`));
+      });
+      body.appendChild(chips);
+    }
+
+    // completed jobs
+    body.appendChild(el("h4", null, "Completed jobs"));
+    const records = Store.recordsForWorker(u.id);
+    if (!history.done.length && !records.length) {
+      body.appendChild(el("p", "muted sm", "No completed jobs yet."));
+    } else {
+      history.done.forEach(t => body.appendChild(jobRow(t)));
+      // work the owner filed into the house record (cost, date, notes)
+      records.forEach(r => {
+        const row = el("div", "job-row");
+        const main = el("div", "job-main");
+        main.appendChild(el("b", null, r.title));
+        const bits = [];
+        const prop = Store.property(r.propertyId);
+        if (prop) bits.push(prop.name);
+        if (r.date) bits.push(new Date(r.date).toLocaleDateString());
+        if (r.cost) bits.push(`$${r.cost}`);
+        if (bits.length) main.appendChild(el("span", "muted sm", bits.join(" · ")));
+        if (r.description) main.appendChild(el("span", "muted sm", r.description));
+        row.appendChild(main);
+        row.appendChild(el("span", "pill done", "On record"));
+        body.appendChild(row);
+      });
+    }
+
+    // work in flight
+    if (history.active.length) {
+      body.appendChild(el("h4", null, "Work in progress"));
+      history.active.forEach(t => body.appendChild(jobRow(t)));
+    }
+
+    // crews this worker runs / belongs to
+    const led = Store.crewsLedBy(u.id);
+    const member = Store.crewsOf(u.id).filter(c => c.ownerId !== u.id);
+    if (led.length || member.length) {
+      body.appendChild(el("h4", null, "Crews"));
+      const chips = el("div", "chips");
+      led.forEach(c => chips.appendChild(el("span", "chip", `${c.name} (leads)`)));
+      member.forEach(c => chips.appendChild(el("span", "chip", c.name)));
+      body.appendChild(chips);
+    }
+  }
+
+  // --- owner: properties and hires
+  if (u.role === "owner") {
+    const props = Store.propertiesFor(u);
+    body.appendChild(el("h4", null, "Properties"));
+    if (!props.length) body.appendChild(el("p", "muted sm", "No properties listed."));
+    props.forEach(p => {
+      const row = el("div", "job-row");
+      const main = el("div", "job-main");
+      main.appendChild(el("b", null, p.name));
+      if (p.address) main.appendChild(el("span", "muted sm", p.address));
+      row.appendChild(main);
+      body.appendChild(row);
+    });
+  }
+
+  // --- actions
+  const actions = el("div", "modal-actions");
+  const closeBtn = el("button", "btn ghost", "Close");
+  actions.appendChild(closeBtn);
+
+  if (Store.canMessage(ME.id, u.id)) {
+    const msgBtn = el("button", "btn", "💬 Message");
+    msgBtn.onclick = () => { closeModal(m); openConversationModal(u.id); };
+    actions.appendChild(msgBtn);
+  }
+  if (ME.role === "owner" && u.role === "worker") {
+    const hireBtn = el("button", "btn", "Hire");
+    hireBtn.onclick = () => { closeModal(m); openHireModal(u); };
+    actions.appendChild(hireBtn);
+  }
+  if (ME.role === "worker" && u.role === "owner") {
+    const reqBtn = el("button", "btn", "Request Work");
+    reqBtn.onclick = () => { closeModal(m); openRequestWorkModal(u); };
+    actions.appendChild(reqBtn);
+  }
+  body.appendChild(actions);
+
+  const m = modal(`${u.name}`, body);
+  closeBtn.onclick = () => closeModal(m);
+  openModal(m);
+}
+
+/** Human label for a task's category/priority bucket. */
+function tradeLabel(key) {
+  const map = {
+    high: "High priority", normal: "General", low: "Minor",
+    plumbing: "Plumbing", electrical: "Electrical", hvac: "HVAC",
+    roofing: "Roofing", landscaping: "Landscaping", general: "General",
+  };
+  return map[key] || (key ? key.charAt(0).toUpperCase() + key.slice(1) : "General");
+}
+
+/** One job line inside a profile. */
+function jobRow(t) {
+  const row = el("div", "job-row");
+  const main = el("div", "job-main");
+  main.appendChild(el("b", null, t.title));
+  const bits = [];
+  const prop = Store.property(t.propertyId);
+  if (prop) bits.push(prop.name);
+  if (t.completedAt) bits.push(new Date(t.completedAt).toLocaleDateString());
+  else if (t.dueDate) bits.push(`due ${t.dueDate}`);
+  if (bits.length) main.appendChild(el("span", "muted sm", bits.join(" · ")));
+  if (t.description) main.appendChild(el("span", "muted sm", t.description));
+  row.appendChild(main);
+  row.appendChild(statusPill(t.status));
+  return row;
 }
 
 // ==================== MAP (Both roles) ====================
+const SOLVANG_CA = { lat: 34.5958, lng: -120.1376 };
+
+async function detectLocation() {
+  // Try browser geolocation with high accuracy
+  if (navigator.geolocation) {
+    try {
+      const pos = await new Promise((resolve, reject) =>
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 8000,
+          maximumAge: 60000
+        })
+      );
+      return { lat: pos.coords.latitude, lng: pos.coords.longitude };
+    } catch { /* fall through to IP */ }
+  }
+  // Fallback: IP-based geolocation
+  try {
+    const res = await fetch("https://ipapi.co/json/");
+    if (res.ok) {
+      const data = await res.json();
+      if (data.latitude && data.longitude) return { lat: data.latitude, lng: data.longitude };
+    }
+  } catch { /* fall through to default */ }
+  // Default: Solvang, CA
+  return SOLVANG_CA;
+}
+
 function renderMap() {
   const wrap = $("#view-map");
   wrap.innerHTML = "";
@@ -615,9 +937,10 @@ function renderMap() {
   // Initialize Leaflet map
   if (typeof L !== "undefined") {
     if (map) { map.remove(); map = null; }
-    map = L.map("mainMap").setView([34.0522, -118.2437], 10);
+    map = L.map("mainMap", { maxZoom: 19 }).setView([SOLVANG_CA.lat, SOLVANG_CA.lng], 16);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "© OpenStreetMap contributors"
+      attribution: "© OpenStreetMap contributors",
+      maxZoom: 19
     }).addTo(map);
 
     // Add markers for properties
@@ -642,141 +965,19 @@ function renderMap() {
         }).addTo(map).bindPopup(`<b>${esc(t.title)}</b><br>${esc(t.description || "")}`);
       }
     });
+
+    // Try to center on user's location
+    detectLocation().then(loc => {
+      if (map && loc) {
+        map.setView([loc.lat, loc.lng], 16);
+        L.marker([loc.lat, loc.lng], {
+          icon: L.divIcon({ className: "user-location-marker", html: "📍", iconSize: [24, 24] })
+        }).addTo(map).bindPopup("You are here");
+      }
+    });
   } else {
     wrap.appendChild(el("p", "muted", "Map library not loaded. Please check your internet connection."));
   }
-}
-
-// ==================== HIRING (Owner) ====================
-function renderHiring() {
-  const wrap = $("#view-hiring");
-  wrap.innerHTML = "";
-
-  wrap.appendChild(el("h2", null, "Hiring"));
-
-  // Current hires
-  const hires = Store.getHiresForOwner(ME.id);
-  const hiresSec = el("div", "card");
-  hiresSec.appendChild(el("h3", null, "Current Hires"));
-  if (!hires.length) {
-    hiresSec.appendChild(el("p", "muted", "No hires yet."));
-  } else {
-    hires.forEach(h => {
-      const worker = Store.user(h.workerId);
-      const prop = Store.property(h.propertyId);
-      const row = el("div", "card");
-      row.style.display = "flex";
-      row.style.alignItems = "center";
-      row.style.gap = "12px";
-      const av = el("span", "avatar", initial(worker?.name || "?"));
-      av.style.background = avatarColor(h.workerId);
-      row.appendChild(av);
-      const info = el("div");
-      info.appendChild(el("b", null, worker?.name || "Unknown"));
-      info.appendChild(el("p", "muted sm", `${prop?.name || "Unknown"} · ${h.status}`));
-      row.appendChild(info);
-      if (h.status === "pending") {
-        const activeBtn = el("button", "btn sm ghost", "Activate");
-        activeBtn.onclick = () => { Store.updateHire(h.id, { status: "active" }); toast("Hire activated", "good"); render(); };
-        row.appendChild(activeBtn);
-      }
-      hiresSec.appendChild(row);
-    });
-  }
-  wrap.appendChild(hiresSec);
-
-  // Available workers
-  const workers = Store.workers();
-  const availSec = el("div", "card");
-  availSec.appendChild(el("h3", null, "Available Workers"));
-  if (!workers.length) {
-    availSec.appendChild(el("p", "muted", "No workers registered yet."));
-  } else {
-    workers.forEach(w => {
-      const profile = Store.getWorkerProfile(w.id);
-      const row = el("div", "card");
-      row.style.display = "flex";
-      row.style.alignItems = "center";
-      row.style.gap = "12px";
-      const av = el("span", "avatar", initial(w.name));
-      av.style.background = avatarColor(w.id);
-      row.appendChild(av);
-      const info = el("div");
-      info.appendChild(el("b", null, w.name));
-      const bits = [profile?.trade, profile?.location, profile?.rating ? `⭐ ${profile.rating}` : ""].filter(Boolean);
-      if (bits.length) info.appendChild(el("p", "muted sm", bits.join(" · ")));
-      row.appendChild(info);
-      const hireBtn = el("button", "btn sm ghost", "Hire");
-      hireBtn.onclick = () => openHireModal(w);
-      row.appendChild(hireBtn);
-      availSec.appendChild(row);
-    });
-  }
-  wrap.appendChild(availSec);
-}
-
-// ==================== MESSAGES ====================
-function renderMessages() {
-  const wrap = $("#view-messages");
-  wrap.innerHTML = "";
-
-  wrap.appendChild(el("h2", null, "Messages"));
-
-  const msgs = Store.getMessages(ME.id);
-  if (!msgs.length) {
-    wrap.appendChild(emptyState("No messages yet", "Start a conversation with a worker or owner"));
-    return;
-  }
-
-  // Group by conversation partner
-  const conversations = new Map();
-  msgs.forEach(m => {
-    const partnerId = m.fromId === ME.id ? m.toId : m.fromId;
-    if (!conversations.has(partnerId)) conversations.set(partnerId, []);
-    conversations.get(partnerId).push(m);
-  });
-
-  const list = el("div", "grid");
-  conversations.forEach((msgs, partnerId) => {
-    const partner = Store.user(partnerId);
-    const card = el("div", "card");
-    card.appendChild(el("h3", null, partner?.name || "Unknown"));
-    const last = msgs[msgs.length - 1];
-    card.appendChild(el("p", "muted sm", last.text.slice(0, 80)));
-    card.appendChild(el("p", "muted sm", relTime(last.createdAt)));
-    const acts = el("div", "card-actions");
-    const viewBtn = el("button", "btn sm ghost", "View");
-    viewBtn.onclick = () => openConversationModal(partnerId);
-    acts.appendChild(viewBtn);
-    card.appendChild(acts);
-    list.appendChild(card);
-  });
-  wrap.appendChild(list);
-}
-
-// ==================== CREWS (Worker) ====================
-function renderCrews() {
-  const wrap = $("#view-crews");
-  wrap.innerHTML = "";
-
-  wrap.appendChild(el("h2", null, "Crews"));
-
-  const crews = Store.getCrewsForWorker(ME.id);
-  if (!crews.length) {
-    wrap.appendChild(emptyState("No crews yet", "You haven't been added to any crews"));
-    return;
-  }
-
-  const list = el("div", "grid");
-  crews.forEach(c => {
-    const card = el("div", "card");
-    card.appendChild(el("h3", null, c.name));
-    card.appendChild(el("p", "muted sm", `${c.memberIds.length} members`));
-    const owner = Store.user(c.ownerId);
-    if (owner) card.appendChild(el("p", "muted sm", `Owner: ${owner.name}`));
-    list.appendChild(card);
-  });
-  wrap.appendChild(list);
 }
 
 // ==================== PROFILE (Both roles) ====================
@@ -788,6 +989,16 @@ function renderProfile() {
 
   const card = el("div", "card");
   card.appendChild(el("h3", null, ME.role === "worker" ? "Worker Profile" : "Owner Profile"));
+
+  // Show username (editable, so the save handler below can read it)
+  const usernameField = el("label", "field");
+  usernameField.appendChild(el("span", null, "Username"));
+  const usernameInput = el("input");
+  usernameInput.value = ME.username || "";
+  usernameInput.placeholder = "Username";
+  usernameInput.style.cssText = "background:var(--bg2);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:10px 12px;width:100%";
+  usernameField.appendChild(usernameInput);
+  card.appendChild(usernameField);
 
   // Common fields for both roles
   const bioInput = el("textarea");
@@ -852,6 +1063,60 @@ function renderProfile() {
     card.appendChild(radiusField);
   }
 
+  // Worker-specific: crews — workers organise themselves into crews.
+  // A homeowner never creates one; they hire individual workers instead.
+  if (ME.role === "worker") {
+    const crewSec = el("div", "card");
+    const crewHead = el("div", "row-between");
+    crewHead.appendChild(el("h4", null, "My Crews"));
+    if (Store.canCreateCrew(ME)) {
+      const newCrewBtn = el("button", "btn sm", "+ New Crew");
+      newCrewBtn.onclick = () => openCrewModal();
+      crewHead.appendChild(newCrewBtn);
+    }
+    crewSec.appendChild(crewHead);
+
+    const led = Store.crewsLedBy(ME.id);
+    const memberOf = Store.crewsOf(ME.id).filter(c => c.ownerId !== ME.id);
+
+    if (!led.length && !memberOf.length) {
+      crewSec.appendChild(el("p", "muted sm", "No crews yet. Create one to group workers."));
+    }
+
+    led.forEach(c => {
+      const row = el("div", "card");
+      row.style.padding = "10px";
+      row.appendChild(el("b", null, c.name));
+      const n = (c.memberIds || []).length;
+      row.appendChild(el("p", "muted sm", `${n} member${n === 1 ? "" : "s"} · you lead this crew`));
+      const acts = el("div", "card-actions");
+      const memBtn = el("button", "btn sm ghost", "Members");
+      memBtn.onclick = () => openCrewMembersModal(c.id);
+      acts.appendChild(memBtn);
+      const delBtn = el("button", "btn sm danger", "Delete");
+      delBtn.onclick = () => {
+        if (!confirm(`Delete crew "${c.name}"?`)) return;
+        Store.deleteCrew(c.id);
+        toast("Crew deleted", "info");
+        render();
+      };
+      acts.appendChild(delBtn);
+      row.appendChild(acts);
+      crewSec.appendChild(row);
+    });
+
+    memberOf.forEach(c => {
+      const row = el("div", "card");
+      row.style.padding = "10px";
+      row.appendChild(el("b", null, c.name));
+      const lead = Store.user(c.ownerId);
+      row.appendChild(el("p", "muted sm", `Member · led by ${lead?.name || "another worker"}`));
+      crewSec.appendChild(row);
+    });
+
+    wrap.appendChild(crewSec);
+  }
+
   // Owner-specific: show properties and hiring history
   if (ME.role === "owner") {
     const props = Store.propertiesFor(ME);
@@ -914,6 +1179,8 @@ function renderProfile() {
     if (u) {
       u.phone = phoneInput.value;
       u.location = locInput.value;
+      const newUsername = usernameInput.value.trim().toLowerCase().replace(/[^a-z0-9_]/g, "");
+      if (newUsername) u.username = newUsername;
       Store.save();
       ME = Store.user(ME.id);
     }
@@ -1008,6 +1275,36 @@ function renderSettings() {
     a.click();
   };
   data.appendChild(exportBtn);
+  const importBtn = el("button", "btn ghost sm", "Import Data");
+  const importInput = el("input");
+  importInput.type = "file";
+  importInput.accept = ".json,application/json";
+  importInput.style.display = "none";
+  importInput.onchange = () => {
+    const file = importInput.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const imported = JSON.parse(reader.result);
+        if (imported && typeof imported === "object") {
+          Store.db = imported;
+          Store.reindex();
+          Store.save();
+          toast("Data imported successfully", "good");
+          render();
+        } else {
+          toast("Invalid data file", "bad");
+        }
+      } catch {
+        toast("Could not parse file", "bad");
+      }
+    };
+    reader.readAsText(file);
+  };
+  importBtn.onclick = () => importInput.click();
+  data.appendChild(importBtn);
+  data.appendChild(importInput);
   const resetBtn = el("button", "btn ghost sm danger", "Reset All Data");
   resetBtn.onclick = () => {
     if (confirm("This will delete ALL your data. Are you sure?")) {
@@ -1018,6 +1315,13 @@ function renderSettings() {
   };
   data.appendChild(resetBtn);
   wrap.appendChild(data);
+
+  // Last saved timestamp
+  const lastSaved = localStorage.getItem("habitat.lastSaved");
+  if (lastSaved) {
+    const savedDate = new Date(lastSaved);
+    wrap.appendChild(el("p", "muted sm", `Last saved: ${savedDate.toLocaleString()}`));
+  }
 }
 
 // ==================== MODALS ====================
@@ -1190,9 +1494,10 @@ function openTaskModal(task = null, lat = null, lng = null) {
   // Initialize map after modal opens
   setTimeout(() => {
     if (typeof L !== "undefined") {
-      taskMap = L.map("taskMap").setView([34.0522, -118.2437], 10);
+      taskMap = L.map("taskMap", { maxZoom: 19 }).setView([SOLVANG_CA.lat, SOLVANG_CA.lng], 16);
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution: "© OpenStreetMap contributors"
+        attribution: "© OpenStreetMap contributors",
+        maxZoom: 19
       }).addTo(taskMap);
 
       // Click to place marker
@@ -1728,6 +2033,13 @@ function openHireModal(worker) {
 
 function openConversationModal(partnerId) {
   const partner = Store.user(partnerId);
+  if (!partner) return;
+  // Privacy: owners and workers may message each other, but a worker can only
+  // open a thread with an owner who contacted them first.
+  if (!Store.canMessage(ME.id, partnerId)) {
+    toast("You cannot message this person yet.", "bad");
+    return;
+  }
   const msgs = Store.getConversation(ME.id, partnerId);
 
   const body = el("div", "stack");
@@ -1771,6 +2083,134 @@ function openConversationModal(partnerId) {
   };
   input.onkeydown = (e) => {
     if (e.key === "Enter") sendBtn.click();
+  };
+  openModal(m);
+}
+
+// ==================== CREWS ====================
+/** Create a crew. Only workers may do this. */
+function openCrewModal() {
+  if (!Store.canCreateCrew(ME)) {
+    toast("Only trade workers can create crews. As a property owner you hire individual workers instead.", "bad");
+    return;
+  }
+
+  const body = el("div", "stack");
+
+  const nameInput = el("input");
+  nameInput.placeholder = "Crew name";
+  nameInput.style.cssText = "background:var(--bg2);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:10px 12px;width:100%";
+  const nameField = el("label", "field");
+  nameField.appendChild(el("span", null, "Crew Name"));
+  nameField.appendChild(nameInput);
+  body.appendChild(nameField);
+
+  const descInput = el("input");
+  descInput.placeholder = "What does this crew do?";
+  descInput.style.cssText = nameInput.style.cssText;
+  const descField = el("label", "field");
+  descField.appendChild(el("span", null, "Description (optional)"));
+  descField.appendChild(descInput);
+  body.appendChild(descField);
+
+  // Pick members from the other workers
+  body.appendChild(el("h4", null, "Members"));
+  const list = el("div", "stack");
+  const checks = new Map();
+  const others = Store.workers().filter(w => w.id !== ME.id);
+  if (!others.length) {
+    list.appendChild(el("p", "muted sm", "No other workers registered yet."));
+  }
+  others.forEach(w => {
+    const row = el("label", "assign-row");
+    const cb = el("input");
+    cb.type = "checkbox";
+    checks.set(w.id, cb);
+    row.appendChild(cb);
+    const av = el("span", "avatar", initial(w.name));
+    av.style.background = avatarColor(w.id);
+    av.style.width = "28px"; av.style.height = "28px"; av.style.fontSize = "12px";
+    row.appendChild(av);
+    row.appendChild(el("span", null, `${w.name}${w.username ? " · @" + w.username : ""}`));
+    list.appendChild(row);
+  });
+  body.appendChild(list);
+
+  const actions = el("div", "modal-actions");
+  const cancelBtn = el("button", "btn ghost", "Cancel");
+  const createBtn = el("button", "btn", "Create Crew");
+  actions.appendChild(cancelBtn);
+  actions.appendChild(createBtn);
+  body.appendChild(actions);
+
+  const m = modal("New Crew", body);
+  cancelBtn.onclick = () => closeModal(m);
+  createBtn.onclick = () => {
+    const name = nameInput.value.trim();
+    if (!name) return toast("Please enter a crew name", "bad");
+    const ids = [ME.id];
+    checks.forEach((cb, id) => { if (cb.checked) ids.push(id); });
+    Store.createCrew(ME.id, name, ids);
+    if (descInput.value.trim()) {
+      const crews = Store.crewsLedBy(ME.id);
+      const last = crews[crews.length - 1];
+      if (last) Store.updateCrew(last.id, { description: descInput.value.trim() });
+    }
+    closeModal(m);
+    toast("Crew created", "good");
+    render();
+  };
+  openModal(m);
+}
+
+/** Add or remove members of a crew the worker leads. */
+function openCrewMembersModal(crewId) {
+  const crew = Store.idx.crews.get(crewId);
+  if (!crew) return;
+  if (crew.ownerId !== ME.id) {
+    toast("Only the crew's leader can change its members.", "bad");
+    return;
+  }
+
+  const body = el("div", "stack");
+  const list = el("div", "stack");
+  const checks = new Map();
+  const workers = Store.workers();
+  if (!workers.length) list.appendChild(el("p", "muted sm", "No workers registered yet."));
+
+  workers.forEach(w => {
+    const row = el("label", "assign-row");
+    const cb = el("input");
+    cb.type = "checkbox";
+    cb.checked = (crew.memberIds || []).includes(w.id);
+    cb.disabled = w.id === ME.id;      // the leader always stays
+    checks.set(w.id, cb);
+    row.appendChild(cb);
+    const av = el("span", "avatar", initial(w.name));
+    av.style.background = avatarColor(w.id);
+    av.style.width = "28px"; av.style.height = "28px"; av.style.fontSize = "12px";
+    row.appendChild(av);
+    row.appendChild(el("span", null, `${w.name}${w.id === ME.id ? " (you — leader)" : ""}`));
+    list.appendChild(row);
+  });
+  body.appendChild(list);
+
+  const actions = el("div", "modal-actions");
+  const cancelBtn = el("button", "btn ghost", "Cancel");
+  const saveBtn = el("button", "btn", "Save");
+  actions.appendChild(cancelBtn);
+  actions.appendChild(saveBtn);
+  body.appendChild(actions);
+
+  const m = modal("Crew Members", body);
+  cancelBtn.onclick = () => closeModal(m);
+  saveBtn.onclick = () => {
+    const ids = [ME.id];
+    checks.forEach((cb, id) => { if (cb.checked && id !== ME.id) ids.push(id); });
+    Store.updateCrew(crewId, { memberIds: [...new Set(ids)] });
+    closeModal(m);
+    toast("Crew updated", "good");
+    render();
   };
   openModal(m);
 }
@@ -1872,6 +2312,14 @@ function wire() {
   // Persist on hide
   addEventListener("visibilitychange", () => { if (document.hidden) Store.commit(); });
   addEventListener("pagehide", () => Store.commit());
+
+  // Auto-save every 30 seconds
+  setInterval(() => {
+    if (ME) {
+      Store.commit();
+      localStorage.setItem("habitat.lastSaved", new Date().toISOString());
+    }
+  }, 30000);
 }
 
 // ==================== START ====================
