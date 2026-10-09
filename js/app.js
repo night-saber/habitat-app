@@ -962,32 +962,140 @@ function showUpdateBanner() {
 }
 
 // ==================== MAP (Both roles) ====================
-const SOLVANG_CA = { lat: 34.5958, lng: -120.1376 };
+/* Where the map opens.
+ *
+ * There is deliberately NO hardcoded fallback town: guessing a location and
+ * then dropping a "You are here" pin there is worse than admitting we do not
+ * know. The map opens on the centre of the user's own properties when they
+ * have coordinates, otherwise on a location the user has confirmed, otherwise
+ * on a neutral world view with a prompt to set the location. */
+const LOC_KEY = "habitat.myLocation";
 
-async function detectLocation() {
-  // Try browser geolocation with high accuracy
+function savedLocation() {
+  try {
+    const raw = localStorage.getItem(LOC_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw);
+    return (typeof v.lat === "number" && typeof v.lng === "number") ? v : null;
+  } catch { return null; }
+}
+
+function saveLocation(loc, source) {
+  try {
+    localStorage.setItem(LOC_KEY, JSON.stringify({ lat: loc.lat, lng: loc.lng, source: source || "manual", at: new Date().toISOString() }));
+  } catch { /* ignore */ }
+}
+
+/**
+ * Resolve the user's location, most trustworthy source first:
+ *   1. an explicitly confirmed location (user typed it or tapped "use mine")
+ *   2. the browser's GPS
+ *   3. IP geolocation — approximate, so it is flagged as such
+ * Returns { lat, lng, source } or null. Never invents a location.
+ */
+async function detectLocation({ allowPrompt = true } = {}) {
+  const confirmed = savedLocation();
+  if (confirmed && confirmed.source === "manual") return confirmed;
+
   if (navigator.geolocation) {
     try {
       const pos = await new Promise((resolve, reject) =>
         navigator.geolocation.getCurrentPosition(resolve, reject, {
-          enableHighAccuracy: true,
-          timeout: 8000,
-          maximumAge: 60000
+          enableHighAccuracy: true, timeout: 8000, maximumAge: 300000,
         })
       );
-      return { lat: pos.coords.latitude, lng: pos.coords.longitude };
-    } catch { /* fall through to IP */ }
+      const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude, source: "gps" };
+      saveLocation(loc, "gps");
+      return loc;
+    } catch { /* denied or unavailable — fall through */ }
   }
-  // Fallback: IP-based geolocation
+
+  if (confirmed) return confirmed;
+
   try {
     const res = await fetch("https://ipapi.co/json/");
     if (res.ok) {
       const data = await res.json();
-      if (data.latitude && data.longitude) return { lat: data.latitude, lng: data.longitude };
+      if (typeof data.latitude === "number" && typeof data.longitude === "number") {
+        return { lat: data.latitude, lng: data.longitude, source: "ip" };
+      }
     }
-  } catch { /* fall through to default */ }
-  // Default: Solvang, CA
-  return SOLVANG_CA;
+  } catch { /* offline — no location */ }
+
+  return null;
+}
+
+/** Centre of the user's own properties that have coordinates. */
+function propertiesCentre() {
+  const pts = Store.propertiesFor(ME).filter(p => p.lat != null && p.lng != null);
+  if (!pts.length) return null;
+  return {
+    lat: pts.reduce((a, p) => a + p.lat, 0) / pts.length,
+    lng: pts.reduce((a, p) => a + p.lng, 0) / pts.length,
+  };
+}
+
+/** Ask the user to set their location, and remember it. */
+function openSetLocationModal(onDone) {
+  const body = el("div", "stack");
+  body.appendChild(el("p", "muted sm",
+    "Tell Habitat where you are so the map opens in the right place. This stays on your device."));
+
+  const addrIn = el("input");
+  addrIn.placeholder = "Address, city or postcode";
+  body.appendChild(el("label", "field", "Search an address"));
+  body.lastChild.appendChild(addrIn);
+
+  const status = el("p", "muted sm", "");
+  body.appendChild(status);
+
+  const actions = el("div", "modal-actions");
+  const geoBtn = el("button", "btn ghost", "Use my current location");
+  const saveBtn = el("button", "btn", "Save");
+  const cancelBtn = el("button", "btn ghost", "Cancel");
+  actions.appendChild(cancelBtn);
+  actions.appendChild(geoBtn);
+  actions.appendChild(saveBtn);
+  body.appendChild(actions);
+
+  const m = modal("Set my location", body);
+  cancelBtn.onclick = () => closeModal(m);
+
+  geoBtn.onclick = () => {
+    status.textContent = "Asking your browser…";
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude, source: "manual" };
+        saveLocation(loc, "manual");
+        closeModal(m);
+        toast("Location saved", "good");
+        if (onDone) onDone(loc);
+      },
+      () => { status.textContent = "Could not get your location — type an address instead."; },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  saveBtn.onclick = async () => {
+    const q = addrIn.value.trim();
+    if (!q) return toast("Type an address or use your location", "bad");
+    status.textContent = "Looking it up…";
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(q)}`);
+      const data = await res.json();
+      if (!data || !data.length) { status.textContent = "No match found — try being more specific."; return; }
+      const loc = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon), source: "manual", label: data[0].display_name };
+      saveLocation(loc, "manual");
+      closeModal(m);
+      toast("Location saved", "good");
+      if (onDone) onDone(loc);
+    } catch {
+      status.textContent = "Could not reach the address lookup — check your connection.";
+    }
+  };
+
+  openModal(m);
+  addrIn.focus();
 }
 
 function renderMap() {
@@ -1001,50 +1109,93 @@ function renderMap() {
   mapDiv.style.height = "400px";
   wrap.appendChild(mapDiv);
 
-  // Initialize Leaflet map
-  if (typeof L !== "undefined") {
-    if (map) { map.remove(); map = null; }
-    map = L.map("mainMap", { maxZoom: 19 }).setView([SOLVANG_CA.lat, SOLVANG_CA.lng], 16);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "© OpenStreetMap contributors",
-      maxZoom: 19
-    }).addTo(map);
+  // Location bar: shows where the map is centred and lets the user correct it
+  const locBar = el("div", "map-locbar");
+  const locLabel = el("span", "muted sm", "Locating…");
+  locBar.appendChild(locLabel);
+  const setLocBtn = el("button", "btn ghost sm", "Set my location");
+  locBar.appendChild(setLocBtn);
+  wrap.appendChild(locBar);
 
-    // Add markers for properties
-    const props = Store.propertiesFor(ME);
-    props.forEach(p => {
-      if (p.lat != null && p.lng != null) {
-        L.marker([p.lat, p.lng]).addTo(map)
-          .bindPopup(`<b>${esc(p.name)}</b><br>${esc(p.address || "")}`);
-      }
-    });
-
-    // Add markers for tasks
-    const tasks = Store.tasksForUser(ME);
-    tasks.forEach(t => {
-      if (t.lat != null && t.lng != null) {
-        const color = t.priority === "high" ? "red" : t.priority === "normal" ? "orange" : "green";
-        L.circleMarker([t.lat, t.lng], {
-          radius: 8,
-          fillColor: color,
-          color: color,
-          fillOpacity: 0.7
-        }).addTo(map).bindPopup(`<b>${esc(t.title)}</b><br>${esc(t.description || "")}`);
-      }
-    });
-
-    // Try to center on user's location
-    detectLocation().then(loc => {
-      if (map && loc) {
-        map.setView([loc.lat, loc.lng], 16);
-        L.marker([loc.lat, loc.lng], {
-          icon: L.divIcon({ className: "user-location-marker", html: "📍", iconSize: [24, 24] })
-        }).addTo(map).bindPopup("You are here");
-      }
-    });
-  } else {
+  if (typeof L === "undefined") {
     wrap.appendChild(el("p", "muted", "Map library not loaded. Please check your internet connection."));
+    return;
   }
+
+  if (map) { map.remove(); map = null; }
+
+  // Start from the best thing we actually know; never invent a town.
+  const centre = savedLocation() || propertiesCentre();
+  const start = centre ? [centre.lat, centre.lng] : [20, 0];
+  const startZoom = centre ? 15 : 2;
+
+  map = L.map("mainMap", { maxZoom: 19, worldCopyJump: true }).setView(start, startZoom);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: "© OpenStreetMap contributors",
+    maxZoom: 19
+  }).addTo(map);
+
+  // Add markers for properties
+  const props = Store.propertiesFor(ME);
+  props.forEach(p => {
+    if (p.lat != null && p.lng != null) {
+      L.marker([p.lat, p.lng]).addTo(map)
+        .bindPopup(`<b>${esc(p.name)}</b><br>${esc(p.address || "")}`);
+    }
+  });
+
+  // Add markers for tasks
+  const tasks = Store.tasksForUser(ME);
+  tasks.forEach(t => {
+    if (t.lat != null && t.lng != null) {
+      const color = t.priority === "high" ? "red" : t.priority === "normal" ? "orange" : "green";
+      L.circleMarker([t.lat, t.lng], {
+        radius: 8, fillColor: color, color: color, fillOpacity: 0.7
+      }).addTo(map).bindPopup(`<b>${esc(t.title)}</b><br>${esc(t.description || "")}`);
+    }
+  });
+
+  const propsWithCoords = props.filter(p => p.lat != null && p.lng != null).length;
+  if (propsWithCoords > 1) {
+    // frame everything the user owns
+    map.fitBounds(L.latLngBounds(props.filter(p => p.lat != null && p.lng != null).map(p => [p.lat, p.lng])), { padding: [40, 40], maxZoom: 16 });
+  }
+
+  setLocBtn.onclick = () => openSetLocationModal((loc) => {
+    if (map) {
+      map.setView([loc.lat, loc.lng], 16);
+      dropUserPin(loc, "You are here (saved)");
+    }
+    locLabel.textContent = "Your location";
+  });
+
+  // Show what we know, and label an IP guess as a guess.
+  detectLocation().then(loc => {
+    if (!map) return;
+    if (!loc) {
+      locLabel.textContent = "Location unknown — set it to centre the map";
+      return;
+    }
+    if (loc.source === "ip") {
+      locLabel.textContent = "Approximate area (from your connection) — set it if this is wrong";
+    } else if (loc.source === "gps") {
+      locLabel.textContent = "Your current location";
+    } else {
+      locLabel.textContent = "Your saved location";
+    }
+    if (loc.source === "manual" && !propsWithCoords) map.setView([loc.lat, loc.lng], 16);
+    dropUserPin(loc, loc.source === "ip" ? "Approximate area" : "You are here");
+  });
+}
+
+/** A single, replaceable "you are here" pin. */
+let userPin = null;
+function dropUserPin(loc, label) {
+  if (!map) return;
+  if (userPin) { map.removeLayer(userPin); userPin = null; }
+  userPin = L.marker([loc.lat, loc.lng], {
+    icon: L.divIcon({ className: "user-location-marker", html: "📍", iconSize: [24, 24] })
+  }).addTo(map).bindPopup(label || "You are here");
 }
 
 // ==================== PROFILE (Both roles) ====================
@@ -1561,7 +1712,11 @@ function openTaskModal(task = null, lat = null, lng = null) {
   // Initialize map after modal opens
   setTimeout(() => {
     if (typeof L !== "undefined") {
-      taskMap = L.map("taskMap", { maxZoom: 19 }).setView([SOLVANG_CA.lat, SOLVANG_CA.lng], 16);
+      const tCentre = savedLocation() || propertiesCentre();
+      taskMap = L.map("taskMap", { maxZoom: 19 }).setView(
+        tCentre ? [tCentre.lat, tCentre.lng] : [20, 0],
+        tCentre ? 16 : 2
+      );
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         attribution: "© OpenStreetMap contributors",
         maxZoom: 19

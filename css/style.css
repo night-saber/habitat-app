@@ -437,16 +437,30 @@ h1, h2, h3, h4 { letter-spacing: -.02em; line-height: 1.2; }
   box-shadow: var(--shadow); font-size: 14px;
 }
 
+
 /* ------------------------------------------------------- 3D mesh view */
-.mesh-controls {
-  display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin: 12px 0;
+.mesh-tabs {
+  display: flex; gap: 6px; margin: 12px 0 4px;
+  overflow-x: auto; -webkit-overflow-scrolling: touch;
 }
-.mesh-main { display: grid; grid-template-columns: minmax(200px, 1fr) minmax(280px, 2fr); gap: 12px; }
-@media (max-width: 760px) { .mesh-main { grid-template-columns: 1fr; } }
+.mesh-tabs::-webkit-scrollbar { display: none; }
+.mesh-tab {
+  flex: 0 0 auto; padding: 9px 16px; border-radius: 999px; font-size: 14px;
+  background: var(--panel2); border: 1px solid var(--line); color: var(--muted);
+  min-height: 44px; white-space: nowrap;
+}
+.mesh-tab.active { background: var(--panel3); border-color: var(--green); color: var(--green); font-weight: 700; }
+.mesh-panel { margin-top: 12px; }
+
+.mesh-controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin: 12px 0; }
+.mesh-controls .field { flex: 1 1 180px; min-width: 0; }
+
+.mesh-main { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(260px, 2fr); gap: 12px; }
+@media (max-width: 860px) { .mesh-main { grid-template-columns: 1fr; } }
 
 .mesh-cam-panel, .mesh-view-panel {
   position: relative; border-radius: var(--radius); overflow: hidden;
-  border: 1px solid var(--line); background: var(--panel2); min-height: 240px;
+  border: 1px solid var(--line); background: var(--panel2); min-height: 200px;
 }
 .mesh-video { width: 100%; height: 100%; object-fit: cover; display: block; }
 .mesh-cam-placeholder {
@@ -457,18 +471,47 @@ h1, h2, h3, h4 { letter-spacing: -.02em; line-height: 1.2; }
   position: absolute; left: 8px; bottom: 8px; right: 8px;
   font-size: 12px; color: var(--cyan); text-shadow: 0 1px 4px #000;
 }
-.mesh-canvas { width: 100%; height: 320px; display: block; }
+.mesh-canvas { width: 100%; height: 340px; display: block; touch-action: none; }
 .mesh-overlay {
   position: absolute; inset: 0; display: grid; place-items: center;
-  background: rgba(8,17,14,.72); text-align: center; padding: 16px;
+  background: rgba(8,17,14,.72); text-align: center; padding: 16px; pointer-events: none;
 }
 .mesh-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
 
+/* walkthrough HUD */
+.walk-hud { position: absolute; inset: 0; pointer-events: none; }
+.walk-joystick {
+  position: absolute; left: 14px; bottom: 14px; width: 92px; height: 92px;
+  border-radius: 50%; background: rgba(8,17,14,.55); border: 2px solid var(--line2);
+  pointer-events: auto; touch-action: none;
+}
+.walk-knob {
+  position: absolute; left: 50%; top: 50%; width: 40px; height: 40px; margin: -20px 0 0 -20px;
+  border-radius: 50%; background: var(--green); opacity: .85; transition: transform .05s linear;
+}
+.walk-info {
+  position: absolute; left: 14px; top: 12px; font-size: 13px; font-weight: 700;
+  color: var(--green); text-shadow: 0 1px 6px #000;
+}
+
+/* rooms */
+.room-form { display: flex; gap: 10px; flex-wrap: wrap; }
+.room-form .field { flex: 1 1 200px; min-width: 0; }
+.room-list { display: flex; flex-direction: column; gap: 8px; }
+.room-row {
+  display: flex; gap: 10px; align-items: center; justify-content: space-between;
+  padding: 10px 12px; border-radius: var(--radius);
+  background: var(--panel2); border: 1px solid var(--line); flex-wrap: wrap;
+}
+.room-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 160px; }
+
+/* markers */
 .marker-kinds { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0 12px; }
 .marker-kind {
   display: flex; gap: 6px; align-items: center;
-  padding: 6px 10px; border-radius: 999px; font-size: 13px;
+  padding: 8px 12px; border-radius: 999px; font-size: 13px;
   background: var(--panel2); border: 1px solid var(--line); color: var(--text);
+  min-height: 40px;
 }
 .marker-kind:hover { border-color: var(--line2); }
 .marker-kind.active { border-color: var(--green); background: var(--panel3); font-weight: 700; }
@@ -486,6 +529,74 @@ h1, h2, h3, h4 { letter-spacing: -.02em; line-height: 1.2; }
 .mesh-saved-row {
   display: flex; gap: 12px; align-items: center; justify-content: space-between;
   padding: 10px 12px; border-radius: var(--radius);
-  background: var(--panel2); border: 1px solid var(--line);
+  background: var(--panel2); border: 1px solid var(--line); flex-wrap: wrap;
 }
-.mesh-saved-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mesh-saved-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 180px; }
+
+/* map location bar */
+.map-locbar {
+  display: flex; gap: 10px; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; margin: 10px 0; padding: 8px 12px;
+  background: var(--panel2); border: 1px solid var(--line); border-radius: 10px;
+}
+
+/* ====================================================== MOBILE FRIENDLINESS
+   Everything below is about making the app comfortable on a phone: 44px
+   minimum tap targets, no horizontal overflow, room for the bottom nav and
+   the notch, and a map tall enough to actually use.
+   ======================================================================= */
+
+/* never let a wide element push the page sideways */
+html, body { max-width: 100%; overflow-x: hidden; }
+img, video, canvas, table { max-width: 100%; }
+
+/* long words (addresses, emails, marker labels) must not stretch a card */
+.card, .room-info, .marker-info, .mesh-saved-info, .convo-info, .person-info, .job-main {
+  overflow-wrap: anywhere; word-break: break-word;
+}
+.muted.sm, .muted.xs { overflow-wrap: anywhere; }
+
+/* every tappable thing gets a real target */
+@media (pointer: coarse) {
+  .btn, .navbtn, .subtab, .mesh-tab, .marker-kind, .bottom-nav-btn,
+  .pill, button, select, input[type=checkbox], input[type=radio] { min-height: 44px; }
+  input, select, textarea { font-size: 16px !important; }   /* stops iOS zoom-on-focus */
+  .btn.sm, .btn.ghost.sm { min-height: 40px; }
+}
+
+/* inputs must never be wider than their container */
+.field input, .field select, .field textarea { width: 100%; max-width: 100%; }
+.inline-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+.inline-row .field { flex: 1 1 140px; min-width: 0; }
+
+@media (max-width: 860px) {
+  .mesh-canvas { height: 300px; }
+  .mesh-main { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 640px) {
+  /* room for the fixed bottom nav */
+  .main { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
+  .tabs { padding-left: 12px; padding-right: 12px; }
+  .navbtn { padding: 10px 12px; font-size: 13px; }
+  .mesh-canvas { height: 260px; }
+  .mesh-video { max-height: 240px; }
+  .mesh-actions .btn { flex: 1 1 calc(50% - 4px); }
+  .map { height: 62vh; }
+  h1 { font-size: 1.5rem; }
+  h2 { font-size: 1.25rem; }
+  .modal-card { max-height: 88vh; overflow-y: auto; }
+  .update-banner { left: 12px; right: 12px; transform: none; justify-content: space-between; }
+  .build-badge { font-size: 11px; padding: 3px 8px; }
+}
+
+/* landscape phones: keep the 3D view usable */
+@media (max-height: 520px) and (orientation: landscape) {
+  .mesh-canvas { height: 220px; }
+  .walk-joystick { width: 74px; height: 74px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .clickable-card { transition: none; }
+  .walk-knob { transition: none; }
+}

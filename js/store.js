@@ -917,15 +917,16 @@ const Store = {
    * pinned onto it (light switches, shutoffs, fixtures) describing what each
    * one is and what it does.
    */
-  addMesh({ userId, propertyId, name, points, markers, mode }) {
+  addMesh({ userId, propertyId, name, points, markers, rooms, mode }) {
     const mesh = {
       id: uid(),
       userId,
       propertyId,
-      name: (name || "Mesh").trim(),
+      name: (name || "Model").trim(),
       mode: mode || "indoor",
-      points: points || [],
-      markers: markers || [],
+      rooms: rooms || [],          // walkable geometry: W x D x H per room
+      points: points || [],        // scanned point cloud
+      markers: markers || [],      // pins describing what things are
       createdAt: new Date().toISOString(),
     };
     this.db.meshes.push(mesh);
