@@ -1,7 +1,7 @@
 /* Habitat — service worker for offline support */
 "use strict";
 
-const CACHE_NAME = "habitat-v3";
+const CACHE_NAME = "habitat-v5";
 const APP_SHELL = [
   "./",
   "./index.html",
