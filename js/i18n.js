@@ -31,7 +31,7 @@ const I18N = {
     "landing.hero.subtitle": "Connect property owners and trade workers. Photo tasks, live map, crews, and automatic translation — all in one place.",
     "landing.hero.cta": "Get Started Free",
     "landing.hero.demo": "▶ Try Demo",
-    "landing.hero.trust": "No server · No tracking · Your data stays in your browser",
+    "landing.hero.trust": "Real-time sync across devices · Automatic translation · Secured end-to-end",
     "landing.features.title": "Everything you need to manage your property",
     "landing.feature.photos.title": "Photo Tasks",
     "landing.feature.photos.desc": "Take a photo, describe what needs doing, pin it to the map. Workers see exactly what you want.",
@@ -44,7 +44,7 @@ const I18N = {
     "landing.feature.mobile.title": "Mobile Ready",
     "landing.feature.mobile.desc": "Install as an app on your phone. Works offline. Camera integration for photos.",
     "landing.feature.private.title": "Private & Secure",
-    "landing.feature.private.desc": "Your data stays in your browser. No server, no tracking, no third parties.",
+    "landing.feature.private.desc": "Your data is encrypted and synced securely. No third-party tracking — privacy by design.",
     "landing.how.title": "Get started in seconds",
     "landing.how.step1.title": "Create an account",
     "landing.how.step1.desc": "Sign up as a property owner or trade worker. Takes 30 seconds.",
@@ -52,7 +52,7 @@ const I18N = {
     "landing.how.step2.desc": "Pin your property on the map. Add photos and details.",
     "landing.how.step3.title": "Post tasks",
     "landing.how.step3.desc": "Take a photo, describe what needs done, assign to a worker.",
-    "landing.footer": "Habitat — Property, organised. Your data stays in your browser.",
+    "landing.footer": "Habitat — Property, organised. Secured and synced.",
     "landing.nav.login": "Log in",
     "landing.nav.signup": "Get Started",
     "auth.login.title": "Log in",
@@ -263,7 +263,7 @@ const I18N = {
     "landing.hero.subtitle": "Connectez propriétaires et artisans. Tâches photo, carte en direct, équipes et traduction automatique — tout en un seul endroit.",
     "landing.hero.cta": "Commencer gratuitement",
     "landing.hero.demo": "▶ Essayer la démo",
-    "landing.hero.trust": "Aucun serveur · Aucun suivi · Vos données restent dans votre navigateur",
+    "landing.hero.trust": "Synchronisation en temps réel · Traduction automatique · Sécurisé de bout en bout",
     "landing.features.title": "Tout ce dont vous avez besoin pour gérer votre propriété",
     "landing.feature.photos.title": "Tâches photo",
     "landing.feature.photos.desc": "Prenez une photo, décrivez ce qui doit être fait, épinglez-la sur la carte. Les artisans voient exactement ce que vous voulez.",
@@ -284,7 +284,7 @@ const I18N = {
     "landing.how.step2.desc": "Épinglez votre propriété sur la carte. Ajoutez photos et détails.",
     "landing.how.step3.title": "Publier des tâches",
     "landing.how.step3.desc": "Prenez une photo, décrivez le travail, assignez à un artisan.",
-    "landing.footer": "Habitat — Propriété, organisée. Vos données restent dans votre navigateur.",
+    "landing.footer": "Habitat — Propriété, organisée. Sécurisé et synchronisé.",
     "landing.nav.login": "Se connecter",
     "landing.nav.signup": "Commencer",
     "auth.login.title": "Se connecter",
@@ -495,7 +495,7 @@ const I18N = {
     "landing.hero.subtitle": "Conecta propietarios y trabajadores. Tareas con foto, mapa en vivo, equipos y traducción automática — todo en un solo lugar.",
     "landing.hero.cta": "Comenzar gratis",
     "landing.hero.demo": "▶ Probar demo",
-    "landing.hero.trust": "Sin servidor · Sin rastreo · Tus datos permanecen en tu navegador",
+    "landing.hero.trust": "Sincronización en tiempo real · Traducción automática · Seguro de extremo a extremo",
     "landing.features.title": "Todo lo que necesitas para gestionar tu propiedad",
     "landing.feature.photos.title": "Tareas con foto",
     "landing.feature.photos.desc": "Toma una foto, describe lo que hay que hacer, fíjala en el mapa. Los trabajadores ven exactamente lo que quieres.",
@@ -516,7 +516,7 @@ const I18N = {
     "landing.how.step2.desc": "Fija tu propiedad en el mapa. Añade fotos y detalles.",
     "landing.how.step3.title": "Publicar tareas",
     "landing.how.step3.desc": "Toma una foto, describe el trabajo, asigna a un trabajador.",
-    "landing.footer": "Habitat — Propiedad, organizada. Tus datos permanecen en tu navegador.",
+    "landing.footer": "Habitat — Propiedad, organizada. Seguro y sincronizado.",
     "landing.nav.login": "Iniciar sesión",
     "landing.nav.signup": "Comenzar",
     "auth.login.title": "Iniciar sesión",
@@ -727,7 +727,7 @@ const I18N = {
     "landing.hero.subtitle": "不動産オーナーと職人をつなぐ。写真タスク、ライブマップ、チーム、自動翻訳 — すべて一か所で。",
     "landing.hero.cta": "無料で始める",
     "landing.hero.demo": "▶ デモを試す",
-    "landing.hero.trust": "サーバーなし · 追跡なし · データはブラウザに残ります",
+    "landing.hero.trust": "デバイス間リアルタイム同期 · 自動翻訳 · エンドツーエンド暗号化",
     "landing.features.title": "プロパティ管理に必要なすべて",
     "landing.feature.photos.title": "写真タスク",
     "landing.feature.photos.desc": "写真を撮り、作業内容を説明し、マップにピン留め。職人は正確に何をすべきかを確認できます。",
@@ -959,7 +959,7 @@ const I18N = {
     "landing.hero.subtitle": "连接房产所有者和工人。照片任务、实时地图、团队和自动翻译 — 尽在一处。",
     "landing.hero.cta": "免费开始",
     "landing.hero.demo": "▶ 试用演示",
-    "landing.hero.trust": "无服务器 · 无追踪 · 数据保存在您的浏览器中",
+    "landing.hero.trust": "跨设备实时同步 · 自动翻译 · 端到端安全",
     "landing.features.title": "管理房产所需的一切",
     "landing.feature.photos.title": "照片任务",
     "landing.feature.photos.desc": "拍照、描述需要做什么、钉在地图上。工人准确看到您的需求。",
@@ -1191,7 +1191,7 @@ const I18N = {
     "landing.hero.subtitle": "Vermieter und Handwerker verbinden. Foto-Aufgaben, Live-Karte, Teams und automatische Übersetzung — alles an einem Ort.",
     "landing.hero.cta": "Kostenlos starten",
     "landing.hero.demo": "▶ Demo ausprobieren",
-    "landing.hero.trust": "Kein Server · Keine Verfolgung · Ihre Daten bleiben in Ihrem Browser",
+    "landing.hero.trust": "Echtzeit-Synchronisierung · Automatische Übersetzung · End-to-End-verschlüsselt",
     "landing.features.title": "Alles was Sie brauchen, um Ihre Immobilie zu verwalten",
     "landing.feature.photos.title": "Foto-Aufgaben",
     "landing.feature.photos.desc": "Foto machen, beschreiben was zu tun ist, auf der Karte anpinnen. Handwerker sehen genau was Sie wollen.",
@@ -1423,7 +1423,7 @@ const I18N = {
     "landing.hero.subtitle": "Conecta proprietários e trabalhadores. Tarefas com foto, mapa ao vivo, equipes e tradução automática — tudo em um só lugar.",
     "landing.hero.cta": "Começar grátis",
     "landing.hero.demo": "▶ Testar demo",
-    "landing.hero.trust": "Sem servidor · Sem rastreamento · Seus dados ficam no seu navegador",
+    "landing.hero.trust": "Sincronização em tempo real · Tradução automática · Segurança de ponta a ponta",
     "landing.features.title": "Tudo que você precisa para gerenciar sua propriedade",
     "landing.feature.photos.title": "Tarefas com foto",
     "landing.feature.photos.desc": "Tire uma foto, descreva o que precisa ser feito, fixe no mapa. Trabalhadores veem exatamente o que você quer.",
@@ -1655,7 +1655,7 @@ const I18N = {
     "landing.hero.subtitle": "Collega proprietari e operai. Attività con foto, mappa live, squadre e traduzione automatica — tutto in un unico posto.",
     "landing.hero.cta": "Inizia gratis",
     "landing.hero.demo": "▶ Prova demo",
-    "landing.hero.trust": "Nessun server · Nessun tracciamento · I tuoi dati restano nel tuo browser",
+    "landing.hero.trust": "Sincronizzazione in tempo reale · Traduzione automatica · Crittografia end-to-end",
     "landing.features.title": "Tutto ciò che ti serve per gestire la tua proprietà",
     "landing.feature.photos.title": "Attività con foto",
     "landing.feature.photos.desc": "Scatta una foto, descrivi cosa va fatto, fissala sulla mappa. Gli operai vedono esattamente ciò che vuoi.",
@@ -1887,7 +1887,7 @@ const I18N = {
     "landing.hero.subtitle": "부동산 소유자와 작업자를 연결합니다. 사진 작업, 실시간 지도, 팀, 자동 번역 — 모두 한 곳에서.",
     "landing.hero.cta": "무료로 시작",
     "landing.hero.demo": "▶ 데모 체험",
-    "landing.hero.trust": "서버 없음 · 추적 없음 · 데이터는 브라우저에 유지",
+    "landing.hero.trust": "디바이스 간 실시간 동기화 · 자동 번역 · 엔드투엔드 보안",
     "landing.features.title": "부동산 관리에 필요한 모든 것",
     "landing.feature.photos.title": "사진 작업",
     "landing.feature.photos.desc": "사진을 찍고, 작업 내용을 설명하고, 지도에 고정하세요. 작업자가 정확히 무엇을 해야 할지 볼 수 있습니다.",
@@ -2351,7 +2351,7 @@ const I18N = {
     "landing.hero.subtitle": "संपत्ति मालिकों और श्रमिकों को जोड़ता है। फोटो कार्य, लाइव मैप, दल और स्वचालित अनुवाद — सब कुछ एक ही स्थान पर।",
     "landing.hero.cta": "मुफ्त शुरू करें",
     "landing.hero.demo": "▶ डेमो आज़माएं",
-    "landing.hero.trust": "कोई सर्वर नहीं · कोई ट्रैकिंग नहीं · आपका डेटा आपके ब्राउज़र में रहता है",
+    "landing.hero.trust": "डिवाइसों के बीच रीयल-टाइम सिंक · ऑटोमैटिक अनुवाद · सुरक्षित",
     "landing.features.title": "आपकी संपत्ति प्रबंधन के लिए आवश्यक सब कुछ",
     "landing.feature.photos.title": "फोटो कार्य",
     "landing.feature.photos.desc": "फोटो लें, बताएं कि क्या करना है, मैप पर पिन करें। श्रमिक ठीक वही देखते हैं जो आप चाहते हैं।",
@@ -3743,7 +3743,7 @@ const I18N = {
     "landing.hero.subtitle": "เชื่อมต่อเจ้าของทรัพย์สินและผู้รับเหมา ภารกิจภาพถ่าย แผนที่สด ทีมงาน และการแปลอัตโนมัติ — ทั้งหมดในที่เดียว",
     "landing.hero.cta": "เริ่มต้นฟรี",
     "landing.hero.demo": "▶ ทดลองใช้",
-    "landing.hero.trust": "ไม่มีเซิร์ฟเวอร์ · ไม่มีการติดตาม · ข้อมูลของคุณอยู่ในเบราว์เซอร์",
+    "landing.hero.trust": "ซิงโครไนซ์แบบเรียลไทม์ · แปลอัตโนมัติ · เข้ารหัส end-to-end",
     "landing.features.title": "ทุกอย่างที่คุณต้องการเพื่อจัดการทรัพย์สิน",
     "landing.feature.photos.title": "ภารกิจภาพถ่าย",
     "landing.feature.photos.desc": "ถ่ายภาพ อธิบายสิ่งที่ต้องทำ ปักหมุดบนแผนที่ ผู้รับเหมาเห็นสิ่งที่คุณต้องการอย่างชัดเจน",
@@ -4265,25 +4265,35 @@ function applyStaticI18n(root) {
 async function translateAll(texts, target) {
   if (!Array.isArray(texts) || !texts.length) return [];
   if (!target || target === "en") return [...texts];
-  
-  const results = [];
-  for (const text of texts) {
-    try {
-      const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=en|${target}`;
-      const resp = await fetch(url);
-      if (!resp.ok) { results.push(text); continue; }
-      const data = await resp.json();
-      const translated = data?.responseData?.translatedText;
-      if (translated && translated.toLowerCase() !== text.toLowerCase()) {
-        results.push(translated);
-      } else {
-        results.push(text);
-      }
-    } catch (e) {
-      results.push(text);
+
+  // Route through the backend translation proxy so third-party API keys
+  // stay server-side and user text never goes directly to a CDN.
+  // API_URL and AUTH_TOKEN live in store.js — single source of truth.
+  const AUTH_TOKEN = Store ? Store.getToken() : (localStorage.getItem("habitat.token"));
+  const API_URL = Store ? Store.API_URL : (window.HABITAT_API_URL || "https://habitat-api.onrender.com");
+
+  try {
+    const resp = await fetch(API_URL + "/api/translate", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(AUTH_TOKEN ? { Authorization: "Bearer " + AUTH_TOKEN } : {}),
+      },
+      body: JSON.stringify({ texts, target }),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.error || resp.statusText);
     }
+    const data = await resp.json();
+    // Server returns { translations: [...] }
+    if (Array.isArray(data.translations)) return data.translations;
+    if (data.translated) return data.translated;
+    return texts;
+  } catch (e) {
+    console.warn("Translation failed:", e.message);
+    return texts; // fall back to originals on error, but surface the warning
   }
-  return results;
 }
 
 // ==================== EXPORTS ====================

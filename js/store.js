@@ -3,12 +3,13 @@
 
 const DB_KEY = "habitat.db.v1";
 const SESSION_KEY = "habitat.session.v1";
-const API_URL = window.HABITAT_API_URL || "";
+// The backend is deployed live — never fall back to localStorage-only mode.
+const API_URL = window.HABITAT_API_URL || "https://habitat-api.onrender.com";
 let AUTH_TOKEN = null;
 let autoExportInterval = null;
 
+// CSP-safe, no silent fallback: API errors must surface to the user.
 async function api(path, opts = {}) {
-  if (!API_URL) return null;
   try {
     const res = await fetch(API_URL + path, {
       ...opts,
@@ -17,12 +18,13 @@ async function api(path, opts = {}) {
         ...(AUTH_TOKEN ? { Authorization: "Bearer " + AUTH_TOKEN } : {}),
         ...(opts.headers || {}),
       },
+      credentials: "omit",
     });
-    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
-    return await res.json();
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    return data;
   } catch (e) {
-    console.warn("API call failed:", path, e);
-    return null;
+    throw new Error(e.message || "Network error — please check your connection");
   }
 }
 
@@ -31,28 +33,24 @@ async function apiPut(path, data) { return api(path, { method: "PUT", body: JSON
 async function apiDelete(path) { return api(path, { method: "DELETE" }); }
 
 function uid() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
-async function sha256(text) {
-  try {
-    const buf = new TextEncoder().encode(text);
-    const d = await crypto.subtle.digest("SHA-256", buf);
-    return [...new Uint8Array(d)].map(b => b.toString(16).padStart(2, "0")).join("");
-  } catch {
-    let h = 0;
-    for (let i = 0; i < text.length; i++) h = (h * 31 + text.charCodeAt(i)) >>> 0;
-    return h.toString(16);
-  }
-}
+// Password hashing now happens server-side (bcrypt).
+// No client-side password hashing — the API requires a plaintext password
+// over HTTPS and hashes it with bcrypt before storage.
 
+// CSPRNG-based recovery code generation (was Math.random before).
 function generateRecoveryCode() {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   const segments = [];
+  const bytes = new Uint8Array(12);
+  crypto.getRandomValues(bytes);
   for (let i = 0; i < 3; i++) {
     let seg = "";
     for (let j = 0; j < 4; j++) {
-      seg += chars[Math.floor(Math.random() * chars.length)];
+      seg += chars[bytes[i * 4 + j] % chars.length];
     }
     segments.push(seg);
   }
@@ -82,6 +80,10 @@ const Store = {
   idx: {},
 
   load() {
+    // Restore JWT token from localStorage.
+    try {
+      AUTH_TOKEN = localStorage.getItem("habitat.token") || null;
+    } catch { /* ignore */ }
     let stored = null;
     try {
       const raw = localStorage.getItem(DB_KEY);
@@ -155,7 +157,13 @@ const Store = {
   },
 
   save() {
-    try { localStorage.setItem(DB_KEY, JSON.stringify(this.db)); } catch { /* quota */ }
+    try { localStorage.setItem(DB_KEY, JSON.stringify(this.db)); }
+    catch (e) {
+      // Surface storage failures instead of silently swallowing them.
+      if (e && e.name === "QuotaExceededError") {
+        console.error("localStorage quota exceeded — data not persisted locally");
+      }
+    }
   },
 
   commit() { this.save(); },
@@ -173,138 +181,53 @@ const Store = {
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error("That email doesn't look right.");
     if (password.length < 8) throw new Error("Password must be 8+ characters.");
     
-    // Try API first
-    if (API_URL) {
-      const res = await apiPost("/api/auth/signup", { name, email, password, role, username });
-      if (res) {
-        AUTH_TOKEN = res.token;
-        localStorage.setItem("habitat.token", res.token);
-        return res.user;
-      }
-    }
-    
-    // Fallback to localStorage
-    if (this.idx.usersByEmail.has(email)) throw new Error("That email is already registered.");
-    
-    // Generate username if not provided
-    let finalUsername = username ? username.trim().toLowerCase() : "";
-    if (!finalUsername) {
-      const prefix = email.split("@")[0].replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
-      finalUsername = prefix || "user";
-      let counter = 1;
-      while (this.idx.usersByUsername.has(finalUsername)) {
-        finalUsername = `${prefix}${counter}`;
-        counter++;
-      }
-    }
-    if (this.idx.usersByUsername.has(finalUsername)) throw new Error("That username is already taken.");
-    
-    const recoveryCode = generateRecoveryCode();
-    const user = {
-      id: uid(), name, email,
-      username: finalUsername,
-      pw: await sha256(password + email),
-      role: role === "worker" ? "worker" : "owner",
-      phone: phone || "",
-      location: location || "",
-      recoveryCode,
-      active: true, createdAt: new Date().toISOString(), lastSeen: null,
-    };
-    this.db.users.push(user);
-    this.log(user.id, "account.created");
-    this.reindex();
-    this.save();
-    return this.publicUser(user);
+    // API is mandatory — no localStorage fallback for auth.
+    const res = await apiPost("/api/auth/signup", { name, email, password, role, username });
+    AUTH_TOKEN = res.token;
+    localStorage.setItem("habitat.token", res.token);
+    // Recovery code is sent via email server-side; never exposed in the UI.
+    return res.user;
   },
 
   async login(emailOrUsername, password) {
     const identifier = (emailOrUsername || "").trim().toLowerCase();
-    
-    // Try API first
-    if (API_URL) {
-      const res = await apiPost("/api/auth/login", { email: identifier, password });
-      if (res) {
-        AUTH_TOKEN = res.token;
-        localStorage.setItem("habitat.token", res.token);
-        return res.user;
-      }
-      throw new Error("Invalid email/username or password");
-    }
-    
-    // Fallback to localStorage
-    const u = this.idx.usersByEmail.get(identifier) || this.idx.usersByUsername.get(identifier);
-    if (!u) throw new Error("No account found.");
-    if (!u.active) throw new Error("This account has been disabled.");
-    if (u.pw !== await sha256(password + u.email)) throw new Error("Wrong password.");
-    u.lastSeen = new Date().toISOString();
-    this.log(u.id, "account.login");
-    this.save();
-    return this.publicUser(u);
+    // API is mandatory — no localStorage fallback for auth.
+    const res = await apiPost("/api/auth/login", { email: identifier, password });
+    AUTH_TOKEN = res.token;
+    localStorage.setItem("habitat.token", res.token);
+    return res.user;
   },
 
   async checkUsername(username) {
     if (!username) return { available: false };
     const normalized = username.trim().toLowerCase();
-    if (API_URL) {
-      const res = await api(`/api/check-username?username=${encodeURIComponent(normalized)}`);
-      if (res) return res;
-    }
-    return { available: !this.idx.usersByUsername.has(normalized) };
+    return api(`/api/check-username?username=${encodeURIComponent(normalized)}`);
   },
 
   async forgotPassword(email) {
     email = (email || "").trim().toLowerCase();
-    
-    if (API_URL) {
-      const res = await apiPost("/api/auth/forgot-password", { email });
-      if (res) return res;
-    }
-    
-    // Fallback: just log it
-    console.log(`Password reset requested for ${email}`);
-    return { success: true, message: "If an account exists, a reset email has been sent." };
+    return apiPost("/api/auth/forgot-password", { email });
   },
 
   async resetPassword(token, password) {
     if (!token) throw new Error("Token required");
     if (!password || password.length < 8) throw new Error("Password must be 8+ characters.");
-    
-    if (API_URL) {
-      const res = await apiPost("/api/auth/reset-password", { token, password });
-      if (res) return res;
-      throw new Error("Invalid or expired token");
-    }
-    
-    throw new Error("Password reset requires an API server");
+    return apiPost("/api/auth/reset-password", { token, password });
   },
 
   async recoverAccount(email, code) {
     email = (email || "").trim().toLowerCase();
     const normalizedCode = (code || "").trim().toUpperCase();
-    
-    if (API_URL) {
-      const res = await apiPost("/api/auth/recover", { email, code: normalizedCode });
-      if (res) return res;
-      throw new Error("Invalid recovery code");
-    }
-    
-    // Fallback to localStorage
-    const u = this.idx.usersByEmail.get(email);
-    if (!u) throw new Error("No account with that email.");
-    if (u.recoveryCode !== normalizedCode) throw new Error("Invalid recovery code.");
-    
-    // Generate new password
-    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
-    let newPassword = "";
-    for (let i = 0; i < 12; i++) {
-      newPassword += chars[Math.floor(Math.random() * chars.length)];
-    }
-    u.pw = await sha256(newPassword + u.email);
-    this.log(u.id, "account.recovered");
-    this.save();
-    return { success: true, password: newPassword };
+    // Recovery is now server-side only; the API sends a reset link to email.
+    const res = await apiPost("/api/auth/forgot-password", { email });
+    if (res) return res;
+    throw new Error("Could not process recovery request");
   },
   
+  async changePassword(currentPassword, newPassword) {
+    return apiPost("/api/auth/change-password", { currentPassword, newPassword });
+  },
+
   setToken(token) {
     AUTH_TOKEN = token;
     if (token) localStorage.setItem("habitat.token", token);
@@ -340,6 +263,19 @@ const Store = {
   },
   session() { try { return localStorage.getItem(SESSION_KEY); } catch { return null; } },
 
+  // Validate the current token against the server and return the user.
+  async checkSession() {
+    if (!AUTH_TOKEN) return null;
+    try {
+      const res = await api("/api/me");
+      return res;
+    } catch {
+      // Token expired or invalid — clear it and return null.
+      this.setToken(null);
+      return null;
+    }
+  },
+
   // ==================== DATA EXPORT/IMPORT ====================
   exportData() {
     return {
@@ -358,67 +294,23 @@ const Store = {
   },
 
   async exportToAPI() {
-    if (!API_URL || !AUTH_TOKEN) return null;
+    if (!AUTH_TOKEN) return null;
     const data = this.exportData();
-    return apiPost("/api/import", data);
+    return apiPost("/api/export", data);
   },
 
   async importData(data) {
     if (!data || typeof data !== "object") throw new Error("Invalid data");
-    
-    if (API_URL && AUTH_TOKEN) {
-      const res = await apiPost("/api/import", data);
-      if (res) return res;
-    }
-    
-    // Fallback: merge locally
-    if (Array.isArray(data.properties)) {
-      for (const p of data.properties) {
-        if (!this.idx.properties.has(p.id)) this.db.properties.push(p);
-      }
-    }
-    if (Array.isArray(data.tasks)) {
-      for (const t of data.tasks) {
-        if (!this.idx.tasks.has(t.id)) this.db.tasks.push(t);
-      }
-    }
-    if (Array.isArray(data.houseRecords)) {
-      for (const r of data.houseRecords) {
-        if (!this.idx.houseRecords.has(r.id)) this.db.houseRecords.push(r);
-      }
-    }
-    if (Array.isArray(data.crews)) {
-      for (const c of data.crews) {
-        if (!this.idx.crews.has(c.id)) this.db.crews.push(c);
-      }
-    }
-    if (Array.isArray(data.hires)) {
-      for (const h of data.hires) {
-        if (!this.idx.hires.has(h.id)) this.db.hires.push(h);
-      }
-    }
-    if (Array.isArray(data.meshes)) {
-      for (const m of data.meshes) {
-        if (!this.idx.meshes.has(m.id)) this.db.meshes.push(m);
-      }
-    }
-    if (Array.isArray(data.messages)) {
-      for (const m of data.messages) {
-        if (!this.idx.messages.has(m.id)) this.db.messages.push(m);
-      }
-    }
-    this.reindex();
-    this.save();
-    return { success: true };
+    return apiPost("/api/import", data);
   },
 
   startAutoExport() {
     if (autoExportInterval) clearInterval(autoExportInterval);
     autoExportInterval = setInterval(() => {
-      if (API_URL && AUTH_TOKEN) {
+      if (AUTH_TOKEN) {
         this.exportToAPI().catch(() => {});
       }
-    }, 30000); // Every 30 seconds
+    }, 30000); // Every 30 seconds — syncs local cache to server
   },
 
   stopAutoExport() {
@@ -1125,21 +1017,18 @@ const Store = {
     this.sendMessage(w2.id, owner.id, "Yes — the parts arrive Monday, so Tuesday works.");
     this.sendMessage(owner.id, w3.id, "Jordan, thanks for patching the flashing. Any warranty on that?");
 
-    // The demo button signs in without a password, so give every demo account
-    // the documented password — otherwise "log in as demo@habitat.app" fails.
-    for (const u of this.db.users) {
-      if ((u.email || "").endsWith("@habitat.app")) {
-        u.pw = await sha256("demo1234" + u.email);
-      }
-    }
-
-    this.commit();
+    // The demo button signs in without a password, so seed the known demo
+    // accounts into the local store so the UI has data to render. The API
+    // signup calls above already registered them server-side.
+    this.db.users.push(w1, w2, w3);
+    this.reindex();
+    this.save();
     return owner;
   },
 };
 
 // Export for ES modules and CommonJS
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { Store, uid, sha256, DB_KEY, SESSION_KEY };
+  module.exports = { Store, uid, DB_KEY, SESSION_KEY };
 }
-export { Store, uid, sha256, DB_KEY, SESSION_KEY };
+export { Store, uid, DB_KEY, SESSION_KEY };

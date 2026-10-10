@@ -1,7 +1,7 @@
 /* Habitat — App (UI layer) */
 "use strict";
 
-import { Store, uid, sha256, DB_KEY, SESSION_KEY } from "./store.js";
+import { Store, uid, DB_KEY, SESSION_KEY } from "./store.js";
 import { VERSION, BUILD, VERSION_LABEL } from "./version.js";
 import { createMeshViewer } from "./mesh.js";
 
@@ -108,19 +108,29 @@ function boot() {
     stampVersion();
     watchForUpdates();
     Store.load();
-    const sid = Store.session();
-    if (sid) {
-      const u = Store.user(sid);
-      if (u && u.active) {
-        ME = u;
-        return showApp();
-      }
-      Store.setSession(null);
+    const token = Store.getToken();
+    if (token) {
+      // Validate token against the server — if it fails, clear and show landing.
+      Store.checkSession().then(u => {
+        if (u && u.active) {
+          ME = u;
+          showApp();
+        } else {
+          Store.setSession(null);
+          showLanding();
+        }
+      }).catch(() => {
+        Store.setSession(null);
+        showLanding();
+      });
+    } else {
+      showLanding();
     }
-    showLanding();
   } catch (e) {
     console.error("Boot failed", e);
-    document.body.innerHTML = '<div style="display:grid;place-items:center;min-height:100vh;background:#0a0f0d;color:#e8f0ec;font-family:system-ui;text-align:center;padding:24px;"><div><h1>Something went wrong</h1><p style="color:#8fa89a;margin:12px 0 20px;">Please clear your browser data and try again.</p><button onclick="location.reload()" style="background:#34d399;color:#04150f;border:none;padding:12px 24px;border-radius:10px;font-weight:700;cursor:pointer;">Reload</button></div></div>';
+    // Don't ask users to clear browser data — surface a real error instead.
+    toast("Failed to start Habitat. Please reload the page.", "bad");
+    showLanding();
   }
 }
 
@@ -142,23 +152,36 @@ function wireLanding() {
 
 async function doDemo() {
   try {
-    let demoUser = Store.user("demo_owner");
-    if (!demoUser) {
-      const email = "demo@habitat.app";
-      const existing = Store.idx.usersByEmail.get(email);
-      if (existing) {
-        demoUser = Store.publicUser(existing);
-      } else {
-        demoUser = await Store.createDemoData();
-      }
+    // Demo account is created/loaded via the API backend.
+    let u;
+    try {
+      u = await Store.signup({
+        name: "Demo Owner",
+        email: "demo@habitat.app",
+        password: "demo1234",
+        role: "owner",
+        username: "demo",
+      });
+    } catch (e) {
+      // If demo account already exists, log in instead.
+      if (e.message && (e.message.includes("already registered") || e.message.includes("duplicate"))) {
+        u = await Store.login("demo@habitat.app", "demo1234");
+      } else throw e;
     }
-    Store.setSession(demoUser.id);
-    ME = demoUser;
+    ME = u;
+    // Load demo data into local store (workers, properties, tasks, etc.)
+    try {
+      await Store.createDemoData();
+    } catch (e) {
+      // Demo data may already exist in the server; that is fine.
+      console.warn("Demo data skip:", e.message);
+    }
     showApp();
+    Store.startAutoExport();
     toast("Demo account loaded with sample data", "good");
   } catch (e) {
     console.error("Demo failed:", e);
-    toast("Could not create demo account", "bad");
+    toast("Could not create demo account: " + (e.message || "Unknown error"), "bad");
   }
 }
 
@@ -215,7 +238,6 @@ async function doLogin(e) {
   if (btn) { btn.disabled = true; btn.textContent = "Logging in…"; }
   try {
     const u = await Store.login(f.email.value, f.password.value);
-    Store.setSession(u.id);
     ME = u;
     showApp();
   } catch (err) {
@@ -236,15 +258,11 @@ async function doSignup(e) {
       password: f.password.value, role: f.role.value,
       username: f.username ? f.username.value : "",
     });
-    Store.setSession(u.id);
     ME = u;
     showApp();
     startTutorial();
-    // Show recovery code
-    if (u.recoveryCode) {
-      showRecoveryCode(u.recoveryCode);
-    }
-    // Start auto-export
+    toast("Account created! A recovery code was sent to your email.", "good");
+    // Start auto-export (syncs local cache to server)
     Store.startAutoExport();
   } catch (err) {
     authError(err.message || "Signup failed");
@@ -304,6 +322,7 @@ function showRecoveryCode(code) {
 function logout() {
   Store.commit();
   Store.setSession(null);
+  Store.setToken(null);
   Store.stopAutoExport();
   ME = null;
   if (map) { map.remove(); map = null; }
@@ -1531,12 +1550,14 @@ function renderSettings() {
     try {
       const u = Store.idx.users.get(ME.id);
       if (!u) return;
-      if (u.pw !== await sha256(cur.value + ME.email)) throw new Error("Wrong current password.");
-      if (n1.value.length < 8) throw new Error("New password must be 8+ characters.");
-      u.pw = await sha256(n1.value + ME.email);
-      Store.save();
-      toast("Password changed", "good");
-      cur.value = n1.value = "";
+      // Password changes are handled server-side (bcrypt).
+      const res = await Store.changePassword(cur.value, n1.value);
+      if (res && res.success) {
+        toast("Password changed", "good");
+        cur.value = n1.value = "";
+      } else {
+        toast(res?.error || "Failed to change password", "bad");
+      }
     } catch (e) {
       toast(e.message, "bad");
     }

@@ -1,7 +1,7 @@
 /* Habitat — service worker for offline support */
 "use strict";
 
-const CACHE_NAME = "habitat-v5";
+const CACHE_NAME = "habitat-v6";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -9,9 +9,14 @@ const APP_SHELL = [
   "./js/app.js",
   "./js/store.js",
   "./js/i18n.js",
+  "./js/version.js",
+  "./js/mesh.js",
   "./manifest.json",
   "./assets/icon.svg",
   "./assets/favicon.svg",
+  "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css",
+  "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js",
+  "https://unpkg.com/three@0.160.0/build/three.module.js",
 ];
 
 self.addEventListener("install", (e) => {
@@ -56,14 +61,6 @@ self.addEventListener("fetch", (e) => {
   }
 
   // Network-first for ALL same-origin assets (JS, CSS, images).
-  // Serving code cache-first means a deploy stays invisible until the cache
-  // version is bumped by hand — the cache is only an offline fallback.
-  //
-  // The request is revalidated rather than trusted from the browser's HTTP
-  // cache: GitHub Pages serves assets with a max-age, so without this a
-  // deploy can sit behind a stale HTTP cache even though the service worker
-  // is already fetching from the network. Unchanged files still answer 304,
-  // so revalidation is cheap.
   const req = (e.request.method === "GET")
     ? new Request(e.request, { cache: "no-cache" })
     : e.request;
