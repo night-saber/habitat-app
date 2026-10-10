@@ -6,8 +6,8 @@
  */
 "use strict";
 
-export const VERSION = "1.4.0";
-export const BUILD = "2026-10-09b";
+export const VERSION = "1.5.0";
+export const BUILD = "2026-10-09c";
 
 /* Short form for the header badge, e.g. "v1.3.0 · 2026-10-09". */
 export const VERSION_LABEL = `v${VERSION} · ${BUILD}`;

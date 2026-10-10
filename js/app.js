@@ -307,6 +307,7 @@ function logout() {
   Store.stopAutoExport();
   ME = null;
   if (map) { map.remove(); map = null; }
+  placingLocation = false;
   showLanding();
 }
 
@@ -1113,9 +1114,20 @@ function renderMap() {
   const locBar = el("div", "map-locbar");
   const locLabel = el("span", "muted sm", "Locating…");
   locBar.appendChild(locLabel);
-  const setLocBtn = el("button", "btn ghost sm", "Set my location");
-  locBar.appendChild(setLocBtn);
+
+  const locBtns = el("div", "map-locbar-actions");
+  const placeBtn = el("button", "btn ghost sm", "📍 Place on map");
+  placeBtn.title = "Click the map to set your location there";
+  const setLocBtn = el("button", "btn ghost sm", "Set by address");
+  locBtns.appendChild(placeBtn);
+  locBtns.appendChild(setLocBtn);
+  locBar.appendChild(locBtns);
   wrap.appendChild(locBar);
+
+  // Hint shown while the map is in placing mode
+  const placeHint = el("p", "map-place-hint", "Tap the map to set your location there. Drag the pin to fine-tune.");
+  placeHint.hidden = true;
+  wrap.appendChild(placeHint);
 
   if (typeof L === "undefined") {
     wrap.appendChild(el("p", "muted", "Map library not loaded. Please check your internet connection."));
@@ -1164,10 +1176,39 @@ function renderMap() {
   setLocBtn.onclick = () => openSetLocationModal((loc) => {
     if (map) {
       map.setView([loc.lat, loc.lng], 16);
-      dropUserPin(loc, "You are here (saved)");
+      dropUserPin(loc, "You are here (saved)", { draggable: true });
     }
     locLabel.textContent = "Your location";
+    setPlacing(false);
   });
+
+  // ---- "place on map" mode: click the map to set your location there
+  const setPlacing = (on) => {
+    placingLocation = !!on;
+    placeBtn.classList.toggle("active", placingLocation);
+    placeHint.hidden = !placingLocation;
+    const container = map && map.getContainer();
+    if (container) container.classList.toggle("placing-location", placingLocation);
+  };
+
+  placeBtn.onclick = () => {
+    setPlacing(!placingLocation);
+    if (placingLocation) locLabel.textContent = "Click the map where you are";
+  };
+
+  map.on("click", (ev) => {
+    if (!placingLocation) return;
+    applyLocationFromLatLng(ev.latlng, locLabel);
+    setPlacing(false);
+  });
+
+  // Escape leaves placing mode without changing anything
+  const escHandler = (ev) => {
+    if (ev.key === "Escape" && placingLocation) setPlacing(false);
+  };
+  document.addEventListener("keydown", escHandler);
+  // drop the listener when the map is torn down so it cannot pile up
+  map.once("remove", () => document.removeEventListener("keydown", escHandler));
 
   // Show what we know, and label an IP guess as a guess.
   detectLocation().then(loc => {
@@ -1184,18 +1225,48 @@ function renderMap() {
       locLabel.textContent = "Your saved location";
     }
     if (loc.source === "manual" && !propsWithCoords) map.setView([loc.lat, loc.lng], 16);
-    dropUserPin(loc, loc.source === "ip" ? "Approximate area" : "You are here");
+    dropUserPin(loc, loc.source === "ip" ? "Approximate area" : "You are here",
+      { draggable: loc.source === "manual" });
   });
+}
+
+/**
+ * True while the map is waiting for a click to place the user's location.
+ * Declared at module scope so it survives re-renders of the map view.
+ */
+let placingLocation = false;
+
+/** Save a location picked by clicking or dragging on the map. */
+function applyLocationFromLatLng(latlng, labelEl) {
+  const loc = { lat: latlng.lat, lng: latlng.lng, source: "manual" };
+  saveLocation(loc, "manual");
+  dropUserPin(loc, "You are here (set on the map)", { draggable: true });
+  if (labelEl) labelEl.textContent = "Your location (set on the map)";
+  const coords = `${loc.lat.toFixed(5)}, ${loc.lng.toFixed(5)}`;
+  toast(`Location set to ${coords}`, "good");
+  return loc;
 }
 
 /** A single, replaceable "you are here" pin. */
 let userPin = null;
-function dropUserPin(loc, label) {
+function dropUserPin(loc, label, opts = {}) {
   if (!map) return;
   if (userPin) { map.removeLayer(userPin); userPin = null; }
   userPin = L.marker([loc.lat, loc.lng], {
-    icon: L.divIcon({ className: "user-location-marker", html: "📍", iconSize: [24, 24] })
+    icon: L.divIcon({ className: "user-location-marker", html: "📍", iconSize: [24, 24] }),
+    draggable: !!opts.draggable,
+    autoPan: true,
   }).addTo(map).bindPopup(label || "You are here");
+
+  if (opts.draggable) {
+    // dragging the pin is the fine-tune step after a rough click
+    userPin.on("dragend", () => {
+      const ll = userPin.getLatLng();
+      saveLocation({ lat: ll.lat, lng: ll.lng }, "manual");
+      userPin.setPopupContent("You are here (set on the map)");
+      toast(`Location set to ${ll.lat.toFixed(5)}, ${ll.lng.toFixed(5)}`, "good");
+    });
+  }
 }
 
 // ==================== PROFILE (Both roles) ====================

@@ -539,6 +539,19 @@ h1, h2, h3, h4 { letter-spacing: -.02em; line-height: 1.2; }
   flex-wrap: wrap; margin: 10px 0; padding: 8px 12px;
   background: var(--panel2); border: 1px solid var(--line); border-radius: 10px;
 }
+.map-locbar-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.map-place-hint {
+  margin: 0 0 10px; padding: 8px 12px; border-radius: 10px; font-size: 13px;
+  color: var(--cyan); background: rgba(103,232,249,.08);
+  border: 1px dashed var(--cyan);
+}
+/* while placing, the map invites a click */
+.map.placing-location, .placing-location { cursor: crosshair !important; }
+.placing-location .leaflet-container { cursor: crosshair !important; }
+
+/* the "you are here" pin should look grabbable when it can be dragged */
+.user-location-marker { cursor: grab; }
+.user-location-marker:active { cursor: grabbing; }
 
 /* ====================================================== MOBILE FRIENDLINESS
    Everything below is about making the app comfortable on a phone: 44px
