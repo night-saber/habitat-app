@@ -41,7 +41,11 @@ async function apiDelete(path) { return api(path, { method: "DELETE" }); }
 
 function uid() {
   if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  // CSPRNG fallback — never Math.random
+  const buf = new Uint8Array(16);
+  crypto.getRandomValues(buf);
+  const hex = Array.from(buf, b => b.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
 }
 
 // Password hashing now happens server-side (bcrypt).
