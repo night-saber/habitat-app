@@ -703,6 +703,13 @@ export class MeshViewer {
     this.stepWalk();
     if (this.mode === "orbit" && this.controls) this.controls.update();
     this.renderer.render(this.scene, this.camera);
+    // Log draw calls once per second for performance monitoring
+    // (Three.js best practice: keep under 100 draw calls per frame on mobile)
+    if (this.frameCount % 60 === 0 && this.renderer.info) {
+      const calls = this.renderer.info.render.calls;
+      if (calls > 100) console.warn(`Habitat: ${calls} draw calls (target <100 for mobile)`);
+    }
+    this.frameCount++;
   }
 
   /* ------------------------------------------------------------- geometry */
