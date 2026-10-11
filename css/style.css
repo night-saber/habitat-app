@@ -154,6 +154,7 @@ h1, h2, h3, h4 { letter-spacing: -.02em; line-height: 1.2; }
 .landing-footer .legal-links { margin: 8px 0; }
 .landing-footer .legal-links a { color: var(--green); text-decoration: none; }
 .landing-footer .legal-links a:hover { text-decoration: underline; }
+.preview-label { color: var(--dim); font-style: italic; font-size: 11px; }
 
 /* ============ AUTH ============ */
 .auth-wrap {
