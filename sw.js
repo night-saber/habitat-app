@@ -1,7 +1,7 @@
 /* Habitat — service worker for offline support */
 "use strict";
 
-const CACHE_NAME = "habitat-v6";
+const CACHE_NAME = "habitat-v7";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -14,6 +14,9 @@ const APP_SHELL = [
   "./manifest.json",
   "./assets/icon.svg",
   "./assets/favicon.svg",
+  "./assets/apple-touch-icon.png",
+  "./assets/icon-192x192.png",
+  "./assets/icon-512x512.png",
   "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css",
   "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js",
   "https://unpkg.com/three@0.160.0/build/three.module.js",

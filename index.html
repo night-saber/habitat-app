@@ -9,7 +9,8 @@
 <meta name="color-scheme" content="dark">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data: https: blob:; connect-src 'self' https://unpkg.com https://*.tile.openstreetmap.org https://libretranslate.com; font-src 'self' https://unpkg.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none';">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="assets/icon.svg">
+<link rel="alternate icon" href="assets/icon-48x48.png" type="image/png" sizes="48x48">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <link rel="manifest" href="manifest.json">
 <script type="importmap">
 {
@@ -25,6 +26,11 @@
 <body>
 
 <!-- ==================== LANDING PAGE ==================== -->
+<noscript>
+  <div style="background:#c0392b;color:#fff;padding:16px;text-align:center;font-weight:700">
+    Habitat requires JavaScript to function. Please enable JavaScript in your browser to continue.
+  </div>
+</div>
 <div id="landing" class="landing">
   <nav class="landing-nav">
     <div class="landing-brand">
@@ -45,14 +51,14 @@
         <button class="btn lg" id="heroGetStartedBtn" aria-label="Get started — create an account">Get Started Free</button>
         <button class="btn ghost lg" id="heroDemoBtn" aria-label="Try the demo without signing up">▶ Try Demo</button>
       </div>
-      <p class="landing-trust">Real-time sync across devices · Automatic translation · Your data, secured end-to-end</p>
+      <p class="landing-trust">Real-time sync across devices · Automatic translation · Encrypted API storage</p>
     </div>
     <div class="landing-hero-visual">
       <div class="preview-card">
         <div class="preview-header">
-          <span class="preview-dot"></span>
-          <span class="preview-dot"></span>
-          <span class="preview-dot"></span>
+          <span class="preview-dot" aria-hidden="true"></span>
+          <span class="preview-dot" aria-hidden="true"></span>
+          <span class="preview-dot" aria-hidden="true"></span>
         </div>
         <div class="preview-stats">
           <div class="preview-stat"><b>12</b><span>Properties</span></div>
@@ -126,7 +132,7 @@
   </section>
 
   <footer class="landing-footer">
-    <p>Habitat — Property, organised. Your data stays in your browser.</p>
+    <p>Habitat — Property, organised. Data synced securely across devices via our encrypted API.</p>
     <p class="build-line">Version <b id="landingVersion">v2.0.0 · 2026-10-10</b></p>
   </footer>
 </div>
@@ -230,9 +236,9 @@
     </div>
     <div class="top-right">
       <div class="who">
-        <span id="avatar" class="avatar">?</span>
+        <span id="avatar" class="avatar" aria-label="User profile, loading">?</span>
         <div class="who-text">
-          <b id="whoName">—</b>
+          <b id="whoName" aria-busy="true">—</b>
           <span id="whoRole" class="muted sm">—</span>
         </div>
       </div>
@@ -277,7 +283,7 @@
   }
 </script>
 <script type="module" src="js/app.js"></script>
-<div id="updateBanner" class="update-banner" hidden>
+<div id="updateBanner" class="update-banner" hidden aria-live="polite" aria-atomic="true">
   <span>A new version of Habitat is available.</span>
   <button class="btn sm" id="updateNow">Update now</button>
 </div>

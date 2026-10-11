@@ -348,6 +348,8 @@ function showApp() {
   $("#app").hidden = false;
   $("#whoName").textContent = ME.name;
   $("#whoRole").textContent = ME.role === "owner" ? "Property owner" : "Trade worker";
+  $("#whoName").removeAttribute("aria-busy");
+  $("#avatar").setAttribute("aria-label", `User profile: ${ME.name}`);
   const av = $("#avatar");
   av.textContent = initial(ME.name);
   av.style.background = avatarColor(ME.id);
