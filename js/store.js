@@ -4,7 +4,7 @@
 const DB_KEY = "habitat.db.v1";
 const SESSION_KEY = "habitat.session.v1";
 // The backend is deployed live — never fall back to localStorage-only mode.
-const API_URL = window.HABITAT_API_URL || "https://habitat-api.onrender.com";
+const API_URL = window.HABITAT_API_URL || "https://habitat-api.loca.lt";
 let AUTH_TOKEN = null;
 let autoExportInterval = null;
 
