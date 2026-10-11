@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Privacy Policy — Habitat</title>
+  <meta name="theme-color" content="#0a1310">
+  <meta name="color-scheme" content="dark">
+  <base href="/habitat-app/">
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    .legal-page { max-width: 720px; margin: 40px auto; padding: 0 24px; }
+    .legal-page h1 { font-size: 2rem; margin-bottom: 8px; }
+    .legal-page h2 { margin-top: 24px; margin-bottom: 8px; font-size: 1.25rem; }
+    .legal-page p { line-height: 1.6; margin-bottom: 12px; }
+    .legal-page a { color: var(--green, #2ecc71); }
+    .legal-back { display: inline-block; margin-top: 24px; }
+  </style>
+</head>
+<body>
+  <div class="legal-page">
+    <h1>Privacy Policy</h1>
+    <p><em>Last updated: October 2026</em></p>
+
+    <h2>What We Collect</h2>
+    <p>When you sign up, we collect your name, email address, and optionally a username and phone number. We do not collect any personally identifiable information beyond what you provide.</p>
+
+    <h2>How We Use Your Data</h2>
+    <p>Your data is stored encrypted in our SQLite database on our API server. We use your email to authenticate your account, your name for display, and your location to center the map near you. We never sell, rent, or share your data with third parties for marketing purposes.</p>
+
+    <h2>Location Data</h2>
+    <p>We only access your precise location (via the browser's geolocation API) when you explicitly request it — for example, to drop a pin on the map or set your location. Your location is stored on our server only after you confirm it.</p>
+
+    <h2>Photos</h2>
+    <p>If you attach photos to tasks, they are stored as compressed JPEG images on our API server. Photos are only visible to you and workers you assign tasks to.</p>
+
+    <h2>Cookies &amp; Storage</h2>
+    <p>We use your browser's localStorage to cache your session token and offline data. On the server, we use cookies only for session management. No third-party tracking scripts are used.</p>
+
+    <h2>Translation</h2>
+    <p>We use LibreTranslate (a self-hostable translation API) to translate text between languages. No data is sent to external translation services beyond what you explicitly type into the translation feature.</p>
+
+    <h2>Security</h2>
+    <p>Passwords are hashed with bcrypt (12 rounds). JWT tokens expire after 7 days. All API traffic requires HTTPS. Recovery codes are cryptographically generated and hashed before storage.</p>
+
+    <h2>Your Rights</h2>
+    <p>You may request a copy of your data, request deletion, or close your account at any time. Contact us at <a href="mailto:privacy@habitat.app">privacy@habitat.app</a>.</p>
+
+    <p class="legal-back"><a href="./index.html">← Back to Habitat</a></p>
+  </div>
+</body>
+</html>

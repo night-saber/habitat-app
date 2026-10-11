@@ -1,7 +1,7 @@
 /* Habitat — service worker for offline support */
 "use strict";
 
-const CACHE_NAME = "habitat-v7";
+const CACHE_NAME = "habitat-v8";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -11,7 +11,9 @@ const APP_SHELL = [
   "./js/i18n.js",
   "./js/version.js",
   "./js/mesh.js",
-  "./manifest.json",
+  "./manifest.webmanifest",
+  "./privacy.html",
+  "./terms.html",
   "./assets/icon.svg",
   "./assets/favicon.svg",
   "./assets/apple-touch-icon.png",

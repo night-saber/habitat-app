@@ -7,11 +7,12 @@
 <meta name="description" content="Habitat connects property owners and trade workers: photo tasks, live map, and automatic translation.">
 <meta name="theme-color" content="#0a1310">
 <meta name="color-scheme" content="dark">
+<base href="/habitat-app/">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data: https: blob:; connect-src 'self' https://unpkg.com https://*.tile.openstreetmap.org https://libretranslate.com; font-src 'self' https://unpkg.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none';">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="alternate icon" href="assets/icon-48x48.png" type="image/png" sizes="48x48">
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
-<link rel="manifest" href="manifest.json">
+<link rel="manifest" href="manifest.webmanifest">
 <script type="importmap">
 {
   "imports": {
@@ -133,6 +134,10 @@
 
   <footer class="landing-footer">
     <p>Habitat — Property, organised. Data synced securely across devices via our encrypted API.</p>
+    <p class="legal-links">
+      <a href="/habitat-app/privacy.html" aria-label="Privacy Policy">Privacy Policy</a>
+      · <a href="/habitat-app/terms.html" aria-label="Terms of Service">Terms of Service</a>
+    </p>
     <p class="build-line">Version <b id="landingVersion">v2.0.0 · 2026-10-10</b></p>
   </footer>
 </div>
