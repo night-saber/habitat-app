@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: habitat-api
+    runtime: node
+    buildCommand: "npm install"
+    startCommand: "node server.js"
+    envVars:
+      - key: JWT_SECRET
+        generateValue: true
+      - key: FRONTEND_URL
+        value: "https://night-saber.github.io/habitat-app/"
+      - key: R2_ACCOUNT_ID
+        value: ""
+      - key: R2_ACCESS_KEY_ID
+        value: ""
+      - key: R2_SECRET_ACCESS_KEY
+        value: ""
+      - key: R2_BUCKET
+        value: ""
+      - key: R2_PUBLIC_DOMAIN
+        value: ""
