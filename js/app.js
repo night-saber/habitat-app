@@ -115,6 +115,9 @@ function boot() {
         if (u && u.active) {
           ME = u;
           showApp();
+          // Sync view with hash (for deep-linking on GitHub Pages)
+          const hashView = window.location.hash.replace(/^#\/?/, "");
+          if (hashView && ["dashboard","properties","tasks","people","mesh","map","profile","settings"].includes(hashView)) go(hashView);
         } else {
           Store.setSession(null);
           showLanding();
@@ -133,6 +136,14 @@ function boot() {
     showLanding();
   }
 }
+
+// Hash route changes (GitHub Pages SPA fallback)
+window.addEventListener("hashchange", () => {
+  const v = window.location.hash.replace(/^#\/?/, "");
+  if (v && ["dashboard","properties","tasks","people","mesh","map","profile","settings"].includes(v) && $("#app").hidden === false) {
+    go(v);
+  }
+});
 
 // ==================== LANDING ====================
 function showLanding() {
@@ -283,8 +294,8 @@ async function doReset(e) {
       await Store.resetPassword(token, f.next.value);
       showLoginForm();
       toast("Password reset successful. Log in with your new password.", "good");
-      // Clean URL
-      window.history.replaceState({}, document.title, window.location.pathname);
+      // Clean URL — use hash path so GitHub Pages serves index.html
+      window.history.replaceState({}, document.title, "#/login");
     } else {
       // Request reset email
       await Store.forgotPassword(f.email.value);
@@ -373,7 +384,9 @@ function buildNav() {
 
 function go(v) {
   view = v;
-  $$(".navbtn").forEach(b => b.classList.toggle("active", b.dataset.view === v));
+  // Update hash for deep-linking on GitHub Pages (SPA routing fallback)
+  if (window.location.hash !== `#/${v}`) window.location.hash = `#/${v}`;
+  $(".navbtn").forEach(b => b.classList.toggle("active", b.dataset.view === v));
   $$(".bottom-nav-btn").forEach(b => b.classList.toggle("active", b.dataset.view === v));
   $$(".view").forEach(s => { s.hidden = s.id !== `view-${v}`; });
   render();

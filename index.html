@@ -7,6 +7,7 @@
 <meta name="description" content="Habitat connects property owners and trade workers: photo tasks, live map, and automatic translation.">
 <meta name="theme-color" content="#0a1310">
 <meta name="color-scheme" content="dark">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data: https: blob:; connect-src 'self' https://unpkg.com https://*.tile.openstreetmap.org https://libretranslate.com; font-src 'self' https://unpkg.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none';">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="assets/icon.svg">
 <link rel="manifest" href="manifest.json">
@@ -41,8 +42,8 @@
       <h1>Property, organised.</h1>
       <p>Connect property owners and trade workers. Photo tasks, live map, crews, and automatic translation — all in one place.</p>
       <div class="landing-cta">
-        <button class="btn lg" id="heroGetStartedBtn">Get Started Free</button>
-        <button class="btn ghost lg" id="heroDemoBtn">▶ Try Demo</button>
+        <button class="btn lg" id="heroGetStartedBtn" aria-label="Get started — create an account">Get Started Free</button>
+        <button class="btn ghost lg" id="heroDemoBtn" aria-label="Try the demo without signing up">▶ Try Demo</button>
       </div>
       <p class="landing-trust">Real-time sync across devices · Automatic translation · Your data, secured end-to-end</p>
     </div>
@@ -71,33 +72,33 @@
     <h2>Everything you need to manage your property</h2>
     <div class="features-grid">
       <div class="feature-card">
-        <span class="feature-icon">📸</span>
+        <span class="feature-icon" aria-hidden="true">📸</span>
         <h3>Photo Tasks</h3>
         <p>Take a photo, describe what needs doing, pin it to the map. Workers see exactly what you want.</p>
       </div>
       <div class="feature-card">
-        <span class="feature-icon">🗺️</span>
+        <span class="feature-icon" aria-hidden="true">🗺️</span>
         <h3>Live Map</h3>
         <p>See every task and property on a map. Tap to add new tasks right where they need to happen.</p>
       </div>
       <div class="feature-card">
-        <span class="feature-icon">🌐</span>
+        <span class="feature-icon" aria-hidden="true">🌐</span>
         <h3>Auto-Translation</h3>
         <p>65+ languages supported. Write in your language, workers read in theirs. Automatic.</p>
       </div>
       <div class="feature-card">
-        <span class="feature-icon">👷</span>
+        <span class="feature-icon" aria-hidden="true">👷</span>
         <h3>Trade Workers</h3>
         <p>Plumbing, electrical, HVAC, roofing, landscaping — assign tasks to the right trade.</p>
       </div>
       <div class="feature-card">
-        <span class="feature-icon">📱</span>
+        <span class="feature-icon" aria-hidden="true">📱</span>
         <h3>Mobile Ready</h3>
         <p>Install as an app on your phone. Works offline. Camera integration for photos.</p>
       </div>
       <div class="feature-card">
-        <span class="feature-icon">🔒</span>
-        <h3>Private & Secure</h3>
+        <span class="feature-icon" aria-hidden="true">🔒</span>
+        <h3>Private &amp; Secure</h3>
         <p>Your data is encrypted and synced via our secure API. No tracking, no third-party selling.</p>
       </div>
     </div>

@@ -24,7 +24,14 @@ async function api(path, opts = {}) {
     if (!res.ok) throw new Error(data.error || res.statusText);
     return data;
   } catch (e) {
-    throw new Error(e.message || "Network error — please check your connection");
+    // Distinguish network errors (backend not deployed / CORS / DNS) from
+    // HTTP errors the server did return. network errors throw a TypeError
+    // with no HTTP status — surface the backend URL so the user knows where
+    // the request was going.
+    const msg = e instanceof TypeError
+      ? `Cannot reach the Habitat API backend at ${API_URL}. Check that the server is running and reachable.`
+      : (e.message || "Network error — please check your connection");
+    throw new Error(msg);
   }
 }
 
