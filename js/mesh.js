@@ -703,6 +703,13 @@ export class MeshViewer {
     this.stepWalk();
     if (this.mode === "orbit" && this.controls) this.controls.update();
     this.renderer.render(this.scene, this.camera);
+    // Log draw calls once per second for performance monitoring
+    // (Three.js best practice: keep under 100 draw calls per frame on mobile)
+    if (this.frameCount % 60 === 0 && this.renderer.info) {
+      const calls = this.renderer.info.render.calls;
+      if (calls > 100) console.warn(`Habitat: ${calls} draw calls (target <100 for mobile)`);
+    }
+    this.frameCount++;
   }
 
   /* ------------------------------------------------------------- geometry */
@@ -1119,8 +1126,15 @@ export class MeshViewer {
   addPoints(pts) {
     this.points.push(...pts);
     if (this.points.length > MAX_POINTS) {
+      // Use crypto.getRandomValues for unbiased downsampling (was Math.random)
       const ratio = MAX_POINTS / this.points.length;
-      this.points = this.points.filter(() => Math.random() < ratio);
+      const kept = [];
+      const rand = new Uint32Array(this.points.length);
+      crypto.getRandomValues(rand);
+      for (let i = 0; i < this.points.length; i++) {
+        if ((rand[i] / 0xffffffff) < ratio) kept.push(this.points[i]);
+      }
+      this.points = kept;
     }
     this.updatePointCloud();
   }
@@ -1532,7 +1546,10 @@ function el(tag, cls, text) {
 }
 
 function uid() {
-  return "r" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  const buf = new Uint8Array(8);
+  crypto.getRandomValues(buf);
+  return "r" + Array.from(buf, b => b.toString(36).padStart(2, "0")).join("").slice(0, 8) + Date.now().toString(36).slice(-4);
 }
 
 function toast(msg, kind = "info", ms = 2800) {

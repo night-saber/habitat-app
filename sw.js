@@ -1,10 +1,18 @@
-/* Habitat — service worker for offline support */
+/* Habitat — service worker for offline support
+ *
+ * Caching strategy (per PWA best practices):
+ *   HTML:   Network First (fresh content, fallback to cache, then offline.html)
+ *   Assets: Cache First (versioned via CACHE_NAME bump on deploy)
+ *   API:    Network Only (no caching of dynamic data)
+ *   CDN:    Cache First with stale fallback (external libs)
+ */
 "use strict";
 
-const CACHE_NAME = "habitat-v8";
+const CACHE_NAME = "habitat-v9";
 const APP_SHELL = [
   "./",
   "./index.html",
+  "./offline.html",
   "./css/style.css",
   "./js/app.js",
   "./js/store.js",
@@ -47,25 +55,69 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
 
-  // Network-first for external resources
-  if (url.origin !== location.origin) {
-    e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
+/* Network-only for API requests (never cache dynamic data) */
+  if (url.pathname.startsWith("/api/") || url.origin.includes("loca.lt") || url.origin.includes("onrender.com")) {
+    e.respondWith(fetch(e.request).catch(() => new Response(JSON.stringify({ error: "Network unavailable" }), {
+      status: 503,
+      headers: { "Content-Type": "application/json" },
+    })));
     return;
   }
 
-  // Network-first for HTML
+  /* Cache-first for external CDN resources (Leaflet, Three.js) */
+  if (url.origin !== location.origin) {
+    e.respondWith(
+      caches.match(e.request).then((cached) => {
+        if (cached) return cached;
+        return fetch(e.request).then((response) => {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(e.request, clone));
+          return response;
+        }).catch(() => caches.match(e.request));
+      })
+    );
+    return;
+  }
+
+  /* Network-first for HTML (with offline fallback) */
   if (e.request.mode === "navigate" || url.pathname.endsWith(".html") || url.pathname === "/") {
     e.respondWith(
       fetch(e.request).then((response) => {
         const clone = response.clone();
         caches.open(CACHE_NAME).then((cache) => cache.put(e.request, clone));
         return response;
-      }).catch(() => caches.match(e.request))
+      }).catch(() => {
+        return caches.match(e.request).then((cached) => {
+          return cached || caches.match("./offline.html");
+        });
+      })
     );
     return;
   }
 
-  // Network-first for ALL same-origin assets (JS, CSS, images).
+  /* Cache-first for static assets (JS, CSS, images, fonts) */
+  if (e.request.method === "GET" && (
+    url.pathname.startsWith("/js/") ||
+    url.pathname.startsWith("/css/") ||
+    url.pathname.startsWith("/assets/") ||
+    url.pathname.startsWith("/manifest") ||
+    url.pathname.startsWith("/privacy.html") ||
+    url.pathname.startsWith("/terms.html")
+  )) {
+    e.respondWith(
+      caches.match(e.request).then((cached) => {
+        if (cached) return cached;
+        return fetch(e.request).then((response) => {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(e.request, clone));
+          return response;
+        });
+      })
+    );
+    return;
+  }
+
+  /* Default: network-first with cache fallback */
   const req = (e.request.method === "GET")
     ? new Request(e.request, { cache: "no-cache" })
     : e.request;

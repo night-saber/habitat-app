@@ -4,6 +4,8 @@
  */
 "use strict";
 
+import { Store } from "./store.js";
+
 const LANGS = [
   { code: "en", name: "English", rtl: false },
   { code: "fr", name: "Français", rtl: false },
@@ -4270,7 +4272,7 @@ async function translateAll(texts, target) {
   // stay server-side and user text never goes directly to a CDN.
   // API_URL and AUTH_TOKEN live in store.js — single source of truth.
   const AUTH_TOKEN = Store ? Store.getToken() : (localStorage.getItem("habitat.token"));
-  const API_URL = Store ? Store.API_URL : (window.HABITAT_API_URL || "https://habitat-api.onrender.com");
+  const API_URL = Store ? Store.API_URL : (window.HABITAT_API_URL || "https://habitat-app-klhf.onrender.com");
 
   try {
     const resp = await fetch(API_URL + "/api/translate", {

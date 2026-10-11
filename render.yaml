@@ -9,6 +9,8 @@ services:
         generateValue: true
       - key: FRONTEND_URL
         value: "https://night-saber.github.io/habitat-app/"
+      - key: SERVICE_URL
+        value: "https://habitat-app-klhf.onrender.com"
       - key: R2_ACCOUNT_ID
         value: ""
       - key: R2_ACCESS_KEY_ID
